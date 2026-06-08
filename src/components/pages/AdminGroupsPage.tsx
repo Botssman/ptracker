@@ -1,0 +1,201 @@
+"use client";
+
+import { useState } from "react";
+import { useRouterContext } from "@/lib/router-context";
+import { groups, users, networks, getUserById } from "@/lib/mock-data";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Progress } from "@/components/ui/progress";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { LoadingState } from "@/components/shared/LoadingState";
+import { useDemoState } from "@/app/page";
+import { Plus, Eye, Pencil, FolderOpen } from "lucide-react";
+
+export function AdminGroupsPage() {
+  const { navigate } = useRouterContext();
+  const { demoState } = useDemoState();
+  const [userFilter, setUserFilter] = useState<string>("all");
+  const [networkFilter, setNetworkFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  if (demoState === "loading") {
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-bold">Группы заданий</h1>
+        </div>
+        <LoadingState type="table" count={5} />
+      </div>
+    );
+  }
+
+  let filteredGroups = demoState === "empty" ? [] : [...groups];
+
+  if (userFilter !== "all") {
+    filteredGroups = filteredGroups.filter(g => g.userId === Number(userFilter));
+  }
+  if (networkFilter !== "all") {
+    filteredGroups = filteredGroups.filter(g => g.network === networkFilter);
+  }
+  if (statusFilter !== "all") {
+    filteredGroups = filteredGroups.filter(g => g.status === statusFilter);
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold">Группы заданий</h1>
+        <Button onClick={() => navigate("group-form")} size="sm">
+          <Plus className="h-4 w-4 mr-1" />
+          Создать группу
+        </Button>
+      </div>
+
+      {/* Filters */}
+      <Card className="mb-4">
+        <CardContent className="p-4">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Select value={userFilter} onValueChange={setUserFilter}>
+              <SelectTrigger className="w-full sm:w-48">
+                <SelectValue placeholder="Пользователь" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все пользователи</SelectItem>
+                {users.map(u => (
+                  <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={networkFilter} onValueChange={setNetworkFilter}>
+              <SelectTrigger className="w-full sm:w-40">
+                <SelectValue placeholder="Сеть" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все сети</SelectItem>
+                {networks.map(n => (
+                  <SelectItem key={n} value={n}>{n}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-40">
+                <SelectValue placeholder="Статус" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все статусы</SelectItem>
+                <SelectItem value="active">Активно</SelectItem>
+                <SelectItem value="completed">Завершено</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {filteredGroups.length === 0 ? (
+        <EmptyState icon={FolderOpen} message="Группы не найдены" />
+      ) : (
+        <>
+          {/* Desktop table */}
+          <div className="hidden lg:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12">ID</TableHead>
+                  <TableHead>Пользователь</TableHead>
+                  <TableHead>Сеть</TableHead>
+                  <TableHead>Название</TableHead>
+                  <TableHead>Период</TableHead>
+                  <TableHead>Статус</TableHead>
+                  <TableHead>Прогресс</TableHead>
+                  <TableHead className="text-right">Действия</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredGroups.map(group => {
+                  const user = getUserById(group.userId);
+                  const progressPercent = group.totalItems > 0 ? (group.completedItems / group.totalItems) * 100 : 0;
+                  return (
+                    <TableRow key={group.id}>
+                      <TableCell className="font-mono text-xs">{group.id}</TableCell>
+                      <TableCell>
+                        <div>
+                          <p className="text-sm font-medium">{user?.name}</p>
+                          <p className="text-xs text-muted-foreground">{user?.email}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell><Badge variant="outline">{group.network}</Badge></TableCell>
+                      <TableCell className="max-w-[200px] truncate">{group.name}</TableCell>
+                      <TableCell className="text-sm">{group.period}</TableCell>
+                      <TableCell>
+                        <Badge variant={group.status === "active" ? "default" : "secondary"}>
+                          {group.status === "active" ? "Активно" : "Завершено"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="min-w-[120px]">
+                          <p className="text-xs text-muted-foreground mb-1">{group.completedItems}/{group.totalItems} товаров</p>
+                          <Progress value={progressPercent} className="h-2" />
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => navigate("group-detail", { id: group.id })}>
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => navigate("group-form", { id: group.id })}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Mobile cards */}
+          <div className="lg:hidden space-y-3">
+            {filteredGroups.map(group => {
+              const user = getUserById(group.userId);
+              const progressPercent = group.totalItems > 0 ? (group.completedItems / group.totalItems) * 100 : 0;
+              return (
+                <Card key={group.id}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <Badge variant="outline" className="text-xs mb-1">{group.network}</Badge>
+                        <p className="font-medium text-sm">{group.name}</p>
+                        <p className="text-xs text-muted-foreground">{user?.name} · {group.period}</p>
+                      </div>
+                      <Badge variant={group.status === "active" ? "default" : "secondary"} className="text-xs">
+                        {group.status === "active" ? "Активно" : "Завершено"}
+                      </Badge>
+                    </div>
+                    <div className="space-y-1 mb-3">
+                      <p className="text-xs text-muted-foreground">{group.completedItems}/{group.totalItems} товаров</p>
+                      <Progress value={progressPercent} className="h-2" />
+                    </div>
+                    <div className="flex gap-1">
+                      <Button variant="outline" size="sm" className="text-xs" onClick={() => navigate("group-detail", { id: group.id })}>
+                        <Eye className="h-3 w-3 mr-1" />
+                        Просмотр
+                      </Button>
+                      <Button variant="outline" size="sm" className="text-xs" onClick={() => navigate("group-form", { id: group.id })}>
+                        <Pencil className="h-3 w-3 mr-1" />
+                        Редактировать
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
