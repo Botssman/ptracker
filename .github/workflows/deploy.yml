@@ -39,7 +39,9 @@ jobs:
             -e "ssh -i ~/.ssh/deploy_key" \
             --exclude='node_modules' \
             --exclude='.git' \
+            --exclude='.env' \
             --exclude='prisma/dev.db' \
+            --exclude='public/uploads' \
             ./ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/var/www/ptracker/
 
       - name: Установка и перезапуск на сервере
