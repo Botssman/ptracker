@@ -1,21 +1,52 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useRouterContext } from "@/lib/router-context";
-import { groups, getGroupsForUser } from "@/lib/mock-data";
+import { useAuth } from "@/lib/auth-context";
+import { apiFetch } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { ClipboardList, CreditCard, Phone } from "lucide-react";
-import { useDemoState } from "@/app/page";
+
+interface GroupData {
+  id: number;
+  userId: number;
+  userName: string;
+  userEmail: string;
+  network: string;
+  name: string;
+  phone: string | null;
+  period: string;
+  status: string;
+  discountCardPath: string | null;
+  totalItems: number;
+  completedItems: number;
+}
 
 export function UserGroupsPage() {
-  const { navigate, routeParams } = useRouterContext();
-  const { demoState } = useDemoState();
-  const userId = (routeParams.userId as number) || 3;
+  const { navigate } = useRouterContext();
+  const { user } = useAuth();
+  const [groups, setGroups] = useState<GroupData[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  if (demoState === "loading") {
+  useEffect(() => {
+    async function fetchGroups() {
+      try {
+        const data = await apiFetch<GroupData[]>("/api/groups");
+        setGroups(data);
+      } catch (err) {
+        console.error("Failed to fetch groups:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchGroups();
+  }, []);
+
+  if (loading) {
     return (
       <div>
         <h1 className="text-2xl font-bold mb-6">Мои задания</h1>
@@ -24,9 +55,7 @@ export function UserGroupsPage() {
     );
   }
 
-  const userGroups = demoState === "empty" ? [] : getGroupsForUser(userId);
-
-  if (userGroups.length === 0) {
+  if (groups.length === 0) {
     return (
       <div>
         <h1 className="text-2xl font-bold mb-6">Мои задания</h1>
@@ -42,7 +71,7 @@ export function UserGroupsPage() {
     <div>
       <h1 className="text-2xl font-bold mb-6">Мои задания</h1>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {userGroups.map((group) => {
+        {groups.map((group) => {
           const progressPercent = group.totalItems > 0 ? (group.completedItems / group.totalItems) * 100 : 0;
           return (
             <Card
@@ -53,7 +82,11 @@ export function UserGroupsPage() {
               <CardContent className="p-4 space-y-3">
                 {/* Discount card thumbnail */}
                 <div className="w-full h-32 rounded-md bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center border">
-                  <CreditCard className="h-10 w-10 text-primary/40" />
+                  {group.discountCardPath ? (
+                    <img src={group.discountCardPath} alt="Discount card" className="w-full h-full object-cover rounded-md" />
+                  ) : (
+                    <CreditCard className="h-10 w-10 text-primary/40" />
+                  )}
                 </div>
                 {/* Network badge */}
                 <Badge variant="outline" className="text-xs">{group.network}</Badge>
@@ -68,8 +101,8 @@ export function UserGroupsPage() {
                 )}
                 {/* Status */}
                 <div className="flex items-center gap-2">
-                  <Badge variant={group.status === "active" ? "default" : "secondary"} className="text-xs">
-                    {group.status === "active" ? "Активно" : "Завершено"}
+                  <Badge variant={group.status === "ACTIVE" ? "default" : "secondary"} className="text-xs">
+                    {group.status === "ACTIVE" ? "Активно" : "Завершено"}
                   </Badge>
                   <span className="text-xs text-muted-foreground">{group.period}</span>
                 </div>

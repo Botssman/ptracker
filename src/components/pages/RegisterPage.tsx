@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouterContext } from "@/lib/router-context";
+import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +12,9 @@ import { UserPlus } from "lucide-react";
 
 export function RegisterPage() {
   const { routeParams, navigate } = useRouterContext();
+  const { register } = useAuth();
   const code = (routeParams.code as string) || "";
+  const codeRole = (routeParams.codeRole as string) || "";
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -20,7 +23,7 @@ export function RegisterPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
@@ -35,10 +38,14 @@ export function RegisterPage() {
     if (Object.keys(newErrors).length > 0) return;
 
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      await register(code, name.trim(), email.trim(), password);
       navigate("groups");
-    }, 800);
+    } catch (err) {
+      setErrors({ form: err instanceof Error ? err.message : "Ошибка регистрации" });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -51,7 +58,9 @@ export function RegisterPage() {
           <CardTitle className="text-xl">Регистрация</CardTitle>
           <CardDescription>
             {code ? (
-              <>Вы регистрируетесь по коду: <span className="font-mono font-bold text-primary">{code}</span></>
+              <>Вы регистрируетесь по коду: <span className="font-mono font-bold text-primary">{code}</span>
+                {codeRole && <span className="block text-xs mt-1">Роль: {codeRole === "ADMIN" ? "Админ" : codeRole === "MODERATOR" ? "Модератор" : "Пользователь"}</span>}
+              </>
             ) : (
               "Создайте аккаунт для доступа к системе"
             )}

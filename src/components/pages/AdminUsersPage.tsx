@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { users } from "@/lib/mock-data";
-import type { UserRole } from "@/lib/mock-data";
+import { useState, useEffect } from "react";
+import { apiFetch } from "@/lib/api";
+import type { UserRole } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,30 +13,102 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState } from "@/components/shared/LoadingState";
-import { useDemoState } from "@/app/page";
 import { Users, Pencil, ShieldAlert } from "lucide-react";
 
-const roleBadgeVariant: Record<UserRole, "default" | "secondary" | "outline"> = {
-  admin: "default",
-  moderator: "secondary",
-  user: "outline",
+interface UserData {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  isBlocked: boolean;
+  createdAt: string;
+  groupsCount: number;
+}
+
+const roleBadgeVariant: Record<string, "default" | "secondary" | "outline"> = {
+  ADMIN: "default",
+  MODERATOR: "secondary",
+  USER: "outline",
 };
 
-const roleLabel: Record<UserRole, string> = {
-  admin: "Админ",
-  moderator: "Модератор",
-  user: "Пользователь",
+const roleLabel: Record<string, string> = {
+  ADMIN: "Админ",
+  MODERATOR: "Модератор",
+  USER: "Пользователь",
 };
 
 export function AdminUsersPage() {
-  const { demoState } = useDemoState();
-  const [editUser, setEditUser] = useState<typeof users[0] | null>(null);
+  const [users, setUsers] = useState<UserData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editUser, setEditUser] = useState<UserData | null>(null);
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
-  const [editRole, setEditRole] = useState<UserRole>("user");
+  const [editRole, setEditRole] = useState<string>("USER");
+  const [editBlocked, setEditBlocked] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  if (demoState === "loading") {
+  useEffect(() => {
+    async function fetchUsers() {
+      try {
+        const data = await apiFetch<UserData[]>("/api/users");
+        setUsers(data);
+      } catch (err) {
+        console.error("Failed to fetch users:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchUsers();
+  }, []);
+
+  const openEdit = (user: UserData) => {
+    setEditUser(user);
+    setEditName(user.name);
+    setEditEmail(user.email);
+    setEditRole(user.role);
+    setEditBlocked(user.isBlocked);
+    setDialogOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!editUser) return;
+    setSaving(true);
+    try {
+      await apiFetch(`/api/users/${editUser.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          name: editName,
+          email: editEmail,
+          role: editRole,
+          isBlocked: editBlocked,
+        }),
+      });
+      // Refresh users
+      const data = await apiFetch<UserData[]>("/api/users");
+      setUsers(data);
+      setDialogOpen(false);
+    } catch (err) {
+      console.error("Failed to update user:", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleBlock = async (user: UserData) => {
+    try {
+      await apiFetch(`/api/users/${user.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ isBlocked: !user.isBlocked }),
+      });
+      const data = await apiFetch<UserData[]>("/api/users");
+      setUsers(data);
+    } catch (err) {
+      console.error("Failed to update user:", err);
+    }
+  };
+
+  if (loading) {
     return (
       <div>
         <h1 className="text-2xl font-bold mb-6">Пользователи</h1>
@@ -45,21 +117,11 @@ export function AdminUsersPage() {
     );
   }
 
-  const displayUsers = demoState === "empty" ? [] : users;
-
-  const openEdit = (user: typeof users[0]) => {
-    setEditUser(user);
-    setEditName(user.name);
-    setEditEmail(user.email);
-    setEditRole(user.role);
-    setDialogOpen(true);
-  };
-
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">Пользователи</h1>
 
-      {displayUsers.length === 0 ? (
+      {users.length === 0 ? (
         <EmptyState icon={Users} message="Нет пользователей" />
       ) : (
         <>
@@ -73,25 +135,33 @@ export function AdminUsersPage() {
                   <TableHead>Роль</TableHead>
                   <TableHead>Дата регистрации</TableHead>
                   <TableHead className="text-center">Кол-во групп</TableHead>
+                  <TableHead className="text-center">Статус</TableHead>
                   <TableHead className="text-right">Действия</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {displayUsers.map(user => (
+                {users.map(user => (
                   <TableRow key={user.id}>
                     <TableCell className="font-medium">{user.name}</TableCell>
                     <TableCell className="text-muted-foreground">{user.email}</TableCell>
                     <TableCell>
-                      <Badge variant={roleBadgeVariant[user.role]}>{roleLabel[user.role]}</Badge>
+                      <Badge variant={roleBadgeVariant[user.role] || "outline"}>{roleLabel[user.role] || user.role}</Badge>
                     </TableCell>
-                    <TableCell className="text-sm">{user.registeredAt}</TableCell>
+                    <TableCell className="text-sm">{new Date(user.createdAt).toLocaleDateString("ru-RU")}</TableCell>
                     <TableCell className="text-center">{user.groupsCount}</TableCell>
+                    <TableCell className="text-center">
+                      {user.isBlocked ? (
+                        <Badge variant="destructive" className="text-xs">Заблокирован</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-xs text-green-600">Активен</Badge>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="icon" onClick={() => openEdit(user)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="text-destructive">
+                        <Button variant="ghost" size="icon" className={user.isBlocked ? "text-green-600" : "text-destructive"} onClick={() => handleBlock(user)}>
                           <ShieldAlert className="h-4 w-4" />
                         </Button>
                       </div>
@@ -104,7 +174,7 @@ export function AdminUsersPage() {
 
           {/* Mobile cards */}
           <div className="md:hidden space-y-3">
-            {displayUsers.map(user => (
+            {users.map(user => (
               <Card key={user.id}>
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between">
@@ -112,13 +182,19 @@ export function AdminUsersPage() {
                       <p className="font-medium text-sm">{user.name}</p>
                       <p className="text-xs text-muted-foreground">{user.email}</p>
                     </div>
-                    <Badge variant={roleBadgeVariant[user.role]} className="text-xs">{roleLabel[user.role]}</Badge>
+                    <div className="flex items-center gap-1">
+                      <Badge variant={roleBadgeVariant[user.role] || "outline"} className="text-xs">{roleLabel[user.role] || user.role}</Badge>
+                      {user.isBlocked && <Badge variant="destructive" className="text-xs">Блок</Badge>}
+                    </div>
                   </div>
                   <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-muted-foreground">Групп: {user.groupsCount} · {user.registeredAt}</span>
+                    <span className="text-xs text-muted-foreground">Групп: {user.groupsCount} · {new Date(user.createdAt).toLocaleDateString("ru-RU")}</span>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(user)}>
                         <Pencil className="h-3 w-3" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleBlock(user)}>
+                        <ShieldAlert className="h-3 w-3" />
                       </Button>
                     </div>
                   </div>
@@ -147,19 +223,31 @@ export function AdminUsersPage() {
               </div>
               <div className="space-y-2">
                 <Label>Роль</Label>
-                <Select value={editRole} onValueChange={(v) => setEditRole(v as UserRole)}>
+                <Select value={editRole} onValueChange={setEditRole}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="user">Пользователь</SelectItem>
-                    <SelectItem value="moderator">Модератор</SelectItem>
-                    <SelectItem value="admin">Админ</SelectItem>
+                    <SelectItem value="USER">Пользователь</SelectItem>
+                    <SelectItem value="MODERATOR">Модератор</SelectItem>
+                    <SelectItem value="ADMIN">Админ</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="edit-blocked"
+                  checked={editBlocked}
+                  onChange={(e) => setEditBlocked(e.target.checked)}
+                  className="rounded border"
+                />
+                <Label htmlFor="edit-blocked" className="cursor-pointer">Заблокирован</Label>
+              </div>
               <div className="flex gap-2">
-                <Button onClick={() => setDialogOpen(false)}>Сохранить</Button>
+                <Button onClick={handleSave} disabled={saving}>
+                  {saving ? "Сохранение..." : "Сохранить"}
+                </Button>
                 <Button variant="outline" onClick={() => setDialogOpen(false)}>Отмена</Button>
               </div>
             </div>

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouterContext } from "@/lib/router-context";
-import { groups, users, networks, getUserById } from "@/lib/mock-data";
+import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,17 +11,58 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Progress } from "@/components/ui/progress";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState } from "@/components/shared/LoadingState";
-import { useDemoState } from "@/app/page";
 import { Plus, Eye, Pencil, FolderOpen } from "lucide-react";
+
+interface UserData {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+}
+
+interface GroupData {
+  id: number;
+  userId: number;
+  userName: string;
+  userEmail: string;
+  network: string;
+  name: string;
+  phone: string | null;
+  period: string;
+  status: string;
+  discountCardPath: string | null;
+  totalItems: number;
+  completedItems: number;
+}
 
 export function AdminGroupsPage() {
   const { navigate } = useRouterContext();
-  const { demoState } = useDemoState();
+  const [groups, setGroups] = useState<GroupData[]>([]);
+  const [users, setUsers] = useState<UserData[]>([]);
+  const [loading, setLoading] = useState(true);
   const [userFilter, setUserFilter] = useState<string>("all");
   const [networkFilter, setNetworkFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  if (demoState === "loading") {
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [groupsData, usersData] = await Promise.all([
+          apiFetch<GroupData[]>("/api/groups"),
+          apiFetch<UserData[]>("/api/users"),
+        ]);
+        setGroups(groupsData);
+        setUsers(usersData);
+      } catch (err) {
+        console.error("Failed to fetch data:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
+
+  if (loading) {
     return (
       <div>
         <div className="flex items-center justify-between mb-6">
@@ -32,7 +73,7 @@ export function AdminGroupsPage() {
     );
   }
 
-  let filteredGroups = demoState === "empty" ? [] : [...groups];
+  let filteredGroups = [...groups];
 
   if (userFilter !== "all") {
     filteredGroups = filteredGroups.filter(g => g.userId === Number(userFilter));
@@ -43,6 +84,8 @@ export function AdminGroupsPage() {
   if (statusFilter !== "all") {
     filteredGroups = filteredGroups.filter(g => g.status === statusFilter);
   }
+
+  const networks = [...new Set(groups.map(g => g.network))];
 
   return (
     <div>
@@ -86,8 +129,8 @@ export function AdminGroupsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Все статусы</SelectItem>
-                <SelectItem value="active">Активно</SelectItem>
-                <SelectItem value="completed">Завершено</SelectItem>
+                <SelectItem value="ACTIVE">Активно</SelectItem>
+                <SelectItem value="COMPLETED">Завершено</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -115,23 +158,22 @@ export function AdminGroupsPage() {
               </TableHeader>
               <TableBody>
                 {filteredGroups.map(group => {
-                  const user = getUserById(group.userId);
                   const progressPercent = group.totalItems > 0 ? (group.completedItems / group.totalItems) * 100 : 0;
                   return (
                     <TableRow key={group.id}>
                       <TableCell className="font-mono text-xs">{group.id}</TableCell>
                       <TableCell>
                         <div>
-                          <p className="text-sm font-medium">{user?.name}</p>
-                          <p className="text-xs text-muted-foreground">{user?.email}</p>
+                          <p className="text-sm font-medium">{group.userName}</p>
+                          <p className="text-xs text-muted-foreground">{group.userEmail}</p>
                         </div>
                       </TableCell>
                       <TableCell><Badge variant="outline">{group.network}</Badge></TableCell>
                       <TableCell className="max-w-[200px] truncate">{group.name}</TableCell>
                       <TableCell className="text-sm">{group.period}</TableCell>
                       <TableCell>
-                        <Badge variant={group.status === "active" ? "default" : "secondary"}>
-                          {group.status === "active" ? "Активно" : "Завершено"}
+                        <Badge variant={group.status === "ACTIVE" ? "default" : "secondary"}>
+                          {group.status === "ACTIVE" ? "Активно" : "Завершено"}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -160,7 +202,6 @@ export function AdminGroupsPage() {
           {/* Mobile cards */}
           <div className="lg:hidden space-y-3">
             {filteredGroups.map(group => {
-              const user = getUserById(group.userId);
               const progressPercent = group.totalItems > 0 ? (group.completedItems / group.totalItems) * 100 : 0;
               return (
                 <Card key={group.id}>
@@ -169,10 +210,10 @@ export function AdminGroupsPage() {
                       <div>
                         <Badge variant="outline" className="text-xs mb-1">{group.network}</Badge>
                         <p className="font-medium text-sm">{group.name}</p>
-                        <p className="text-xs text-muted-foreground">{user?.name} · {group.period}</p>
+                        <p className="text-xs text-muted-foreground">{group.userName} · {group.period}</p>
                       </div>
-                      <Badge variant={group.status === "active" ? "default" : "secondary"} className="text-xs">
-                        {group.status === "active" ? "Активно" : "Завершено"}
+                      <Badge variant={group.status === "ACTIVE" ? "default" : "secondary"} className="text-xs">
+                        {group.status === "ACTIVE" ? "Активно" : "Завершено"}
                       </Badge>
                     </div>
                     <div className="space-y-1 mb-3">

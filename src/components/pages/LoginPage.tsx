@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouterContext } from "@/lib/router-context";
+import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,13 +13,14 @@ import { LogIn } from "lucide-react";
 
 export function LoginPage() {
   const { navigate } = useRouterContext();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
@@ -29,10 +31,15 @@ export function LoginPage() {
     if (Object.keys(newErrors).length > 0) return;
 
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      await login(email.trim(), password);
+      // Navigate based on role - will be handled by auth context
       navigate("groups");
-    }, 600);
+    } catch (err) {
+      setErrors({ form: err instanceof Error ? err.message : "Ошибка входа" });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -68,9 +75,6 @@ export function LoginPage() {
             <div className="flex flex-col gap-1 text-center text-sm text-muted-foreground">
               <button type="button" className="text-primary underline hover:no-underline" onClick={() => navigate("invite")}>
                 Нет аккаунта? Зарегистрируйтесь по коду
-              </button>
-              <button type="button" className="text-muted-foreground underline hover:no-underline">
-                Забыли пароль?
               </button>
             </div>
           </form>

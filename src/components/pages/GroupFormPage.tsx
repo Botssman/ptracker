@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouterContext } from "@/lib/router-context";
-import { users, networks, products, getItemsForGroup, groups } from "@/lib/mock-data";
+import { apiFetch, apiUpload } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,8 +10,44 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ValidationErrors, FieldError } from "@/components/shared/ValidationErrors";
 import { LoadingState } from "@/components/shared/LoadingState";
-import { useDemoState } from "@/app/page";
 import { ArrowLeft, Save, Plus, Search, Upload, X } from "lucide-react";
+
+interface UserData {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+}
+
+interface ProductData {
+  id: number;
+  network: string;
+  brand: string;
+  nomenclature: string;
+  link: string | null;
+  monthlyPlanQty: number;
+  isActive: boolean;
+}
+
+interface ExistingItem {
+  id: number;
+  productId: number;
+  assignedQty: number;
+  purchasedQty: number;
+  product: { brand: string; nomenclature: string };
+}
+
+interface GroupDetail {
+  id: number;
+  userId: number;
+  network: string;
+  name: string;
+  phone: string | null;
+  period: string;
+  status: string;
+  discountCardPath: string | null;
+  items: ExistingItem[];
+}
 
 interface AddedItem {
   productId: number;
@@ -20,42 +56,86 @@ interface AddedItem {
   qty: number;
 }
 
+const networks = ["Магнит", "Пятёрочка", "Лента", "Перекрёсток", "Ашан"];
+
 export function GroupFormPage() {
   const { routeParams, navigate } = useRouterContext();
-  const { demoState } = useDemoState();
   const isEditing = !!routeParams.id;
   const editId = Number(routeParams.id) || 0;
-  const existingGroup = isEditing ? groups.find(g => g.id === editId) : null;
 
-  const [userId, setUserId] = useState(String(existingGroup?.userId || ""));
-  const [network, setNetwork] = useState(existingGroup?.network || "");
-  const [name, setName] = useState(existingGroup?.name || "");
-  const [phone, setPhone] = useState(existingGroup?.phone || "");
-  const [period, setPeriod] = useState(existingGroup?.period || "");
-  const [status, setStatus] = useState<"active" | "completed">(existingGroup?.status || "active");
-  const [addedItems, setAddedItems] = useState<AddedItem[]>(() => {
-    if (isEditing) {
-      const items = getItemsForGroup(editId);
-      return items.map(i => ({ productId: i.productId, brand: i.brand, nomenclature: i.nomenclature, qty: i.assignedQty }));
-    }
-    return [];
-  });
+  const [userId, setUserId] = useState("");
+  const [network, setNetwork] = useState("");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [period, setPeriod] = useState("");
+  const [status, setStatus] = useState<"ACTIVE" | "COMPLETED">("ACTIVE");
+  const [discountCardPath, setDiscountCardPath] = useState<string | null>(null);
+  const [addedItems, setAddedItems] = useState<AddedItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchNetwork, setSearchNetwork] = useState<string>("all");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
-  const [showLoading, setShowLoading] = useState(true);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+
+  const [users, setUsers] = useState<UserData[]>([]);
+  const [products, setProducts] = useState<ProductData[]>([]);
 
   useEffect(() => {
-    const t = setTimeout(() => setShowLoading(false), 400);
-    return () => clearTimeout(t);
-  }, []);
+    async function fetchData() {
+      try {
+        const [usersData, productsData] = await Promise.all([
+          apiFetch<UserData[]>("/api/users"),
+          apiFetch<ProductData[]>("/api/products"),
+        ]);
+        setUsers(usersData);
+        setProducts(productsData);
 
-  if (demoState === "loading" || showLoading) {
-    return <LoadingState type="form" count={8} />;
-  }
+        if (isEditing) {
+          const groupData = await apiFetch<GroupDetail>(`/api/groups/${editId}`);
+          setUserId(String(groupData.userId));
+          setNetwork(groupData.network);
+          setName(groupData.name);
+          setPhone(groupData.phone || "");
+          setPeriod(groupData.period);
+          setStatus(groupData.status as "ACTIVE" | "COMPLETED");
+          setDiscountCardPath(groupData.discountCardPath);
+          setAddedItems(
+            groupData.items.map(i => ({
+              productId: i.productId,
+              brand: i.product.brand,
+              nomenclature: i.product.nomenclature,
+              qty: i.assignedQty,
+            }))
+          );
+        }
+      } catch (err) {
+        console.error("Failed to fetch data:", err);
+      } finally {
+        setPageLoading(false);
+      }
+    }
+    fetchData();
+  }, [isEditing, editId]);
 
-  const addItem = (product: typeof products[0]) => {
+  const handleCardUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("subfolder", "cards");
+      const result = await apiUpload<{ filePath: string }>("/api/upload", formData);
+      setDiscountCardPath(result.filePath);
+    } catch (err) {
+      console.error("Failed to upload card:", err);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const addItem = (product: ProductData) => {
     if (addedItems.find(i => i.productId === product.id)) return;
     setAddedItems(prev => [...prev, { productId: product.id, brand: product.brand, nomenclature: product.nomenclature, qty: 1 }]);
   };
@@ -75,7 +155,7 @@ export function GroupFormPage() {
     return matchSearch && matchNetwork && notAdded && p.isActive;
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
@@ -88,11 +168,49 @@ export function GroupFormPage() {
     if (Object.keys(newErrors).length > 0) return;
 
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const payload = {
+        userId: Number(userId),
+        network,
+        name: name.trim(),
+        phone: phone.trim() || null,
+        period: period.trim(),
+        status,
+        discountCardPath,
+        items: addedItems.map(i => ({ productId: i.productId, assignedQty: i.qty })),
+      };
+
+      if (isEditing) {
+        await apiFetch(`/api/groups/${editId}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            userId: Number(userId),
+            network,
+            name: name.trim(),
+            phone: phone.trim() || null,
+            period: period.trim(),
+            status,
+            discountCardPath,
+          }),
+        });
+      } else {
+        await apiFetch("/api/groups", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
+
       navigate("admin-groups");
-    }, 600);
+    } catch (err) {
+      setErrors({ form: err instanceof Error ? err.message : "Ошибка сохранения" });
+    } finally {
+      setLoading(false);
+    }
   };
+
+  if (pageLoading) {
+    return <LoadingState type="form" count={8} />;
+  }
 
   return (
     <div className="max-w-3xl">
@@ -148,11 +266,18 @@ export function GroupFormPage() {
 
             <div className="space-y-2">
               <Label>Загрузка скрина дисконтной карты</Label>
-              <div className="border-2 border-dashed rounded-lg p-4 text-center hover:border-primary/50 transition-colors cursor-pointer">
-                <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
-                <p className="text-xs text-muted-foreground">Загрузите скриншот карты (будет конвертирован в WebP)</p>
-                <input type="file" className="hidden" accept="image/*" />
-              </div>
+              {discountCardPath ? (
+                <div className="relative">
+                  <img src={discountCardPath} alt="Discount card" className="w-48 h-32 object-cover rounded border" />
+                  <Button type="button" variant="ghost" size="sm" className="mt-1 text-xs" onClick={() => setDiscountCardPath(null)}>Удалить</Button>
+                </div>
+              ) : (
+                <label className="border-2 border-dashed rounded-lg p-4 text-center hover:border-primary/50 transition-colors cursor-pointer block">
+                  <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
+                  <p className="text-xs text-muted-foreground">{uploading ? "Загрузка..." : "Загрузите скриншот карты"}</p>
+                  <input type="file" className="hidden" accept="image/*" onChange={handleCardUpload} disabled={uploading} />
+                </label>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -168,13 +293,13 @@ export function GroupFormPage() {
 
             <div className="space-y-2">
               <Label>Статус</Label>
-              <Select value={status} onValueChange={(v) => setStatus(v as "active" | "completed")}>
+              <Select value={status} onValueChange={(v) => setStatus(v as "ACTIVE" | "COMPLETED")}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="active">Активно</SelectItem>
-                  <SelectItem value="completed">Завершено</SelectItem>
+                  <SelectItem value="ACTIVE">Активно</SelectItem>
+                  <SelectItem value="COMPLETED">Завершено</SelectItem>
                 </SelectContent>
               </Select>
             </div>

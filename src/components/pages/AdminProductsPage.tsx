@@ -1,27 +1,62 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouterContext } from "@/lib/router-context";
-import { products, networks } from "@/lib/mock-data";
+import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState } from "@/components/shared/LoadingState";
-import { useDemoState } from "@/app/page";
 import { Plus, Search, ExternalLink, Pencil, Trash2, Package, Check, X } from "lucide-react";
+
+interface ProductData {
+  id: number;
+  network: string;
+  brand: string;
+  nomenclature: string;
+  link: string | null;
+  monthlyPlanQty: number;
+  isActive: boolean;
+  thumbnailPath: string | null;
+}
 
 export function AdminProductsPage() {
   const { navigate } = useRouterContext();
-  const { demoState } = useDemoState();
+  const [products, setProducts] = useState<ProductData[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [networkFilter, setNetworkFilter] = useState<string>("all");
   const [brandFilter, setBrandFilter] = useState<string>("all");
 
-  if (demoState === "loading") {
+  useEffect(() => {
+    async function fetchProducts() {
+      try {
+        const data = await apiFetch<ProductData[]>("/api/products");
+        setProducts(data);
+      } catch (err) {
+        console.error("Failed to fetch products:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchProducts();
+  }, []);
+
+  const handleDelete = async (id: number) => {
+    if (!confirm("Удалить товар?")) return;
+    try {
+      await apiFetch(`/api/products/${id}`, { method: "DELETE" });
+      setProducts(prev => prev.filter(p => p.id !== id));
+    } catch (err) {
+      console.error("Failed to delete product:", err);
+    }
+  };
+
+  if (loading) {
     return (
       <div>
         <div className="flex items-center justify-between mb-6">
@@ -32,7 +67,7 @@ export function AdminProductsPage() {
     );
   }
 
-  let filteredProducts = demoState === "empty" ? [] : [...products];
+  let filteredProducts = [...products];
 
   if (search) {
     const q = search.toLowerCase();
@@ -47,6 +82,7 @@ export function AdminProductsPage() {
     filteredProducts = filteredProducts.filter(p => p.brand === brandFilter);
   }
 
+  const networks = [...new Set(products.map(p => p.network))];
   const brands = [...new Set(products.map(p => p.brand))];
 
   return (
@@ -123,9 +159,11 @@ export function AdminProductsPage() {
                     <TableCell className="font-medium">{product.brand}</TableCell>
                     <TableCell className="max-w-xs truncate">{product.nomenclature}</TableCell>
                     <TableCell>
-                      <a href={product.link} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80">
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
+                      {product.link ? (
+                        <a href={product.link} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80">
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      ) : "—"}
                     </TableCell>
                     <TableCell className="text-center">{product.monthlyPlanQty}</TableCell>
                     <TableCell className="text-center">
@@ -136,7 +174,7 @@ export function AdminProductsPage() {
                         <Button variant="ghost" size="icon" onClick={() => navigate("product-form", { id: product.id })}>
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive">
+                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDelete(product.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -170,7 +208,7 @@ export function AdminProductsPage() {
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate("product-form", { id: product.id })}>
                         <Pencil className="h-3 w-3" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(product.id)}>
                         <Trash2 className="h-3 w-3" />
                       </Button>
                     </div>

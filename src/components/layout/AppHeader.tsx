@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouterContext, type PageName } from "@/lib/router-context";
-import type { UserRole } from "@/lib/mock-data";
+import { useAuth, type UserRole } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { Menu, ShoppingCart, LogOut } from "lucide-react";
@@ -13,14 +13,14 @@ interface NavItem {
 }
 
 const navItemsByRole: Record<UserRole, NavItem[]> = {
-  user: [
+  USER: [
     { label: "Мои группы", page: "groups" },
   ],
-  moderator: [
+  MODERATOR: [
     { label: "Группы заданий", page: "admin-groups" },
     { label: "Товары", page: "admin-products" },
   ],
-  admin: [
+  ADMIN: [
     { label: "Группы заданий", page: "admin-groups" },
     { label: "Товары", page: "admin-products" },
     { label: "Пользователи", page: "admin-users" },
@@ -32,14 +32,14 @@ const navItemsByRole: Record<UserRole, NavItem[]> = {
 interface AppHeaderProps {
   role: UserRole;
   onLogout: () => void;
+  userName?: string;
 }
 
-export function AppHeader({ role, onLogout }: AppHeaderProps) {
+export function AppHeader({ role, onLogout, userName }: AppHeaderProps) {
   const { currentPage, navigate } = useRouterContext();
   const [open, setOpen] = useState(false);
 
-  const isGuest = role === "user" ? false : true;
-  const items = role === "user" ? navItemsByRole.user : role === "moderator" ? navItemsByRole.moderator : navItemsByRole.admin;
+  const items = navItemsByRole[role] || navItemsByRole.USER;
 
   const handleNav = (page: PageName) => {
     navigate(page);
@@ -69,7 +69,10 @@ export function AppHeader({ role, onLogout }: AppHeaderProps) {
           ))}
         </nav>
 
-        <div className="hidden md:flex items-center gap-2 ml-auto">
+        <div className="hidden md:flex items-center gap-3 ml-auto">
+          {userName && (
+            <span className="text-sm text-muted-foreground">{userName}</span>
+          )}
           <Button variant="ghost" size="sm" onClick={onLogout} className="text-muted-foreground">
             <LogOut className="h-4 w-4 mr-1" />
             Выйти
@@ -86,6 +89,9 @@ export function AppHeader({ role, onLogout }: AppHeaderProps) {
             </SheetTrigger>
             <SheetContent side="right" className="w-64">
               <SheetTitle className="text-lg font-bold mb-4">Меню</SheetTitle>
+              {userName && (
+                <p className="text-sm text-muted-foreground mb-3">{userName}</p>
+              )}
               <nav className="flex flex-col gap-1">
                 {items.map((item) => (
                   <Button

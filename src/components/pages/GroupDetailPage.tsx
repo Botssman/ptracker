@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouterContext } from "@/lib/router-context";
-import { groups, getItemsForGroup, getReceiptsForGroup } from "@/lib/mock-data";
+import { useAuth } from "@/lib/auth-context";
+import { apiFetch, apiUpload } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,31 +11,133 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState } from "@/components/shared/LoadingState";
-import { useDemoState } from "@/app/page";
 import {
   ArrowLeft, CreditCard, Phone, ExternalLink, ShoppingCart,
-  Upload, Image as ImageIcon, PackageOpen, FileText, CheckCircle2, Clock, XCircle
+  Upload, Image as ImageIcon, PackageOpen, FileText, CheckCircle2, Clock, XCircle, Trash2
 } from "lucide-react";
+
+interface ItemData {
+  id: number;
+  productId: number;
+  assignedQty: number;
+  purchasedQty: number;
+  userMarkedQty: number;
+  modConfirmed: boolean;
+  product: {
+    id: number;
+    brand: string;
+    nomenclature: string;
+    link: string | null;
+    thumbnailPath: string | null;
+  };
+}
+
+interface ReceiptData {
+  id: number;
+  filePath: string;
+  originalName: string | null;
+  uploadedAt: string;
+}
+
+interface GroupDetail {
+  id: number;
+  userId: number;
+  network: string;
+  name: string;
+  phone: string | null;
+  period: string;
+  status: string;
+  discountCardPath: string | null;
+  user: { name: string; email: string };
+  items: ItemData[];
+  receipts: ReceiptData[];
+}
 
 export function GroupDetailPage() {
   const { routeParams, navigate } = useRouterContext();
-  const { demoState } = useDemoState();
-  const groupId = Number(routeParams.id) || 1;
+  const { user } = useAuth();
+  const groupId = Number(routeParams.id) || 0;
+  const [group, setGroup] = useState<GroupDetail | null>(null);
+  const [loading, setLoading] = useState(true);
   const [purchaseState, setPurchaseState] = useState<Record<number, number>>({});
+  const [uploading, setUploading] = useState(false);
 
-  if (demoState === "loading") {
+  useEffect(() => {
+    async function fetchGroup() {
+      try {
+        const data = await apiFetch<GroupDetail>(`/api/groups/${groupId}`);
+        setGroup(data);
+        // Initialize purchase state from data
+        const state: Record<number, number> = {};
+        data.items.forEach(item => {
+          state[item.id] = item.purchasedQty;
+        });
+        setPurchaseState(state);
+      } catch (err) {
+        console.error("Failed to fetch group:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    if (groupId) {
+      fetchGroup();
+    }
+  }, [groupId]);
+
+  const handlePurchaseChange = async (itemId: number, qty: number) => {
+    setPurchaseState(prev => ({ ...prev, [itemId]: qty }));
+    try {
+      await apiFetch(`/api/groups/${groupId}/items/${itemId}`, {
+        method: "PUT",
+        body: JSON.stringify({ purchasedQty: qty, userMarkedQty: qty }),
+      });
+    } catch (err) {
+      console.error("Failed to update purchase qty:", err);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      Array.from(files).forEach(f => formData.append("files", f));
+      await apiUpload(`/api/groups/${groupId}/receipts`, formData);
+      // Refresh group data
+      const data = await apiFetch<GroupDetail>(`/api/groups/${groupId}`);
+      setGroup(data);
+    } catch (err) {
+      console.error("Failed to upload receipts:", err);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDeleteReceipt = async (receiptId: number) => {
+    try {
+      await apiFetch(`/api/receipts/${receiptId}`, { method: "DELETE" });
+      // Refresh group data
+      const data = await apiFetch<GroupDetail>(`/api/groups/${groupId}`);
+      setGroup(data);
+    } catch (err) {
+      console.error("Failed to delete receipt:", err);
+    }
+  };
+
+  if (loading) {
     return <LoadingState type="detail" />;
   }
 
-  const group = groups.find(g => g.id === groupId);
   if (!group) {
     return (
       <EmptyState icon={PackageOpen} message="Группа не найдена" actionLabel="Назад" onAction={() => navigate("groups")} />
     );
   }
 
-  const items = demoState === "empty" ? [] : getItemsForGroup(groupId);
-  const groupReceipts = demoState === "empty" ? [] : getReceiptsForGroup(groupId);
+  const items = group.items;
+  const groupReceipts = group.receipts;
 
   return (
     <div className="space-y-6">
@@ -50,13 +153,17 @@ export function GroupDetailPage() {
           <div className="flex flex-col sm:flex-row gap-6">
             {/* Discount card image */}
             <div className="w-full sm:w-48 h-36 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center border shrink-0">
-              <CreditCard className="h-12 w-12 text-primary/40" />
+              {group.discountCardPath ? (
+                <img src={group.discountCardPath} alt="Discount card" className="w-full h-full object-cover rounded-lg" />
+              ) : (
+                <CreditCard className="h-12 w-12 text-primary/40" />
+              )}
             </div>
             <div className="flex-1 space-y-2">
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="outline">{group.network}</Badge>
-                <Badge variant={group.status === "active" ? "default" : "secondary"}>
-                  {group.status === "active" ? "Активно" : "Завершено"}
+                <Badge variant={group.status === "ACTIVE" ? "default" : "secondary"}>
+                  {group.status === "ACTIVE" ? "Активно" : "Завершено"}
                 </Badge>
                 <span className="text-sm text-muted-foreground">{group.period}</span>
               </div>
@@ -99,17 +206,23 @@ export function GroupDetailPage() {
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                       {/* Product thumbnail */}
                       <div className="w-12 h-12 rounded bg-muted flex items-center justify-center shrink-0">
-                        <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                        {item.product.thumbnailPath ? (
+                          <img src={item.product.thumbnailPath} alt="" className="w-full h-full object-cover rounded" />
+                        ) : (
+                          <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                        )}
                       </div>
                       {/* Info */}
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm">{item.brand}</p>
-                        <p className="text-sm text-muted-foreground truncate">{item.nomenclature}</p>
+                        <p className="font-medium text-sm">{item.product.brand}</p>
+                        <p className="text-sm text-muted-foreground truncate">{item.product.nomenclature}</p>
                         <div className="flex items-center gap-2 mt-1">
-                          <a href={item.link} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1">
-                            <ExternalLink className="h-3 w-3" />
-                            Открыть на сайте магазина
-                          </a>
+                          {item.product.link && (
+                            <a href={item.product.link} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1">
+                              <ExternalLink className="h-3 w-3" />
+                              Открыть на сайте магазина
+                            </a>
+                          )}
                         </div>
                       </div>
                       {/* Qty info + selector */}
@@ -119,7 +232,7 @@ export function GroupDetailPage() {
                           <span className="text-xs text-muted-foreground">Куплено:</span>
                           <Select
                             value={String(purchased)}
-                            onValueChange={(v) => setPurchaseState(prev => ({ ...prev, [item.id]: Number(v) }))}
+                            onValueChange={(v) => handlePurchaseChange(item.id, Number(v))}
                           >
                             <SelectTrigger className="w-16 h-8 text-xs">
                               <SelectValue />
@@ -165,16 +278,24 @@ export function GroupDetailPage() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-6">
             {groupReceipts.map((receipt) => (
-              <Card key={receipt.id} className="overflow-hidden">
+              <Card key={receipt.id} className="overflow-hidden group relative">
                 <div className="aspect-[3/4] bg-muted flex items-center justify-center">
-                  <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                  <img src={receipt.filePath} alt="Receipt" className="w-full h-full object-cover" />
                 </div>
                 <CardContent className="p-2">
-                  <p className="text-xs text-muted-foreground">{receipt.uploadedAt}</p>
-                  <Button variant="ghost" size="sm" className="w-full mt-1 text-xs h-7">
+                  <p className="text-xs text-muted-foreground">{new Date(receipt.uploadedAt).toLocaleString("ru-RU")}</p>
+                  <Button variant="ghost" size="sm" className="w-full mt-1 text-xs h-7" onClick={() => window.open(receipt.filePath, "_blank")}>
                     Открыть полностью
                   </Button>
                 </CardContent>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 text-destructive"
+                  onClick={() => handleDeleteReceipt(receipt.id)}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
               </Card>
             ))}
           </div>
@@ -186,15 +307,23 @@ export function GroupDetailPage() {
             <CardTitle className="text-sm">Загрузить чеки</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="border-2 border-dashed rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer">
+            <label className="border-2 border-dashed rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer block">
               <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-              <p className="text-sm text-muted-foreground">Нажмите для выбора файлов или перетащите сюда</p>
-              <input type="file" multiple className="hidden" accept="image/*" />
-            </div>
+              <p className="text-sm text-muted-foreground">
+                {uploading ? "Загрузка..." : "Нажмите для выбора файлов или перетащите сюда"}
+              </p>
+              <input
+                type="file"
+                multiple
+                className="hidden"
+                accept="image/*"
+                onChange={handleFileUpload}
+                disabled={uploading}
+              />
+            </label>
             <p className="text-xs text-muted-foreground">
-              Изображения будут автоматически конвертированы в формат WebP для оптимизации размера.
+              Изображения будут сохранены на сервере.
             </p>
-            <Button size="sm">Загрузить</Button>
           </CardContent>
         </Card>
       </div>

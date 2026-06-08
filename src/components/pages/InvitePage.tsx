@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouterContext } from "@/lib/router-context";
+import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,11 +12,12 @@ import { KeyRound } from "lucide-react";
 
 export function InvitePage() {
   const { navigate } = useRouterContext();
+  const { validateInviteCode } = useAuth();
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -25,12 +27,19 @@ export function InvitePage() {
     }
 
     setLoading(true);
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      const result = await validateInviteCode(code.trim());
+      if (!result.valid) {
+        setError("Недействительный код приглашения");
+        setLoading(false);
+        return;
+      }
+      navigate("register", { code: code.trim(), codeRole: result.role || "" });
+    } catch {
+      setError("Ошибка проверки кода");
+    } finally {
       setLoading(false);
-      // Accept any non-empty code for demo
-      navigate("register", { code: code.trim() });
-    }, 600);
+    }
   };
 
   return (

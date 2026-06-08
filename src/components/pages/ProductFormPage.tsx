@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouterContext } from "@/lib/router-context";
-import { products, networks } from "@/lib/mock-data";
+import { apiFetch, apiUpload } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,36 +12,81 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { ValidationErrors, FieldError } from "@/components/shared/ValidationErrors";
 import { LoadingState } from "@/components/shared/LoadingState";
-import { useDemoState } from "@/app/page";
 import { ArrowLeft, Save, Upload } from "lucide-react";
+
+interface ProductData {
+  id: number;
+  network: string;
+  brand: string;
+  nomenclature: string;
+  link: string | null;
+  monthlyPlanQty: number;
+  isActive: boolean;
+  thumbnailPath: string | null;
+}
+
+const networks = ["Магнит", "Пятёрочка", "Лента", "Перекрёсток", "Ашан"];
 
 export function ProductFormPage() {
   const { routeParams, navigate } = useRouterContext();
-  const { demoState } = useDemoState();
   const isEditing = !!routeParams.id;
   const editId = Number(routeParams.id) || 0;
-  const existingProduct = isEditing ? products.find(p => p.id === editId) : null;
 
-  const [network, setNetwork] = useState(existingProduct?.network || "");
-  const [brand, setBrand] = useState(existingProduct?.brand || "");
-  const [nomenclature, setNomenclature] = useState(existingProduct?.nomenclature || "");
-  const [link, setLink] = useState(existingProduct?.link || "");
-  const [monthlyPlanQty, setMonthlyPlanQty] = useState(String(existingProduct?.monthlyPlanQty || ""));
-  const [isActive, setIsActive] = useState(existingProduct?.isActive ?? true);
+  const [network, setNetwork] = useState("");
+  const [brand, setBrand] = useState("");
+  const [nomenclature, setNomenclature] = useState("");
+  const [link, setLink] = useState("");
+  const [monthlyPlanQty, setMonthlyPlanQty] = useState("");
+  const [isActive, setIsActive] = useState(true);
+  const [thumbnailPath, setThumbnailPath] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
-  const [showLoading, setShowLoading] = useState(true);
+  const [pageLoading, setPageLoading] = useState(isEditing);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
-    const t = setTimeout(() => setShowLoading(false), 400);
-    return () => clearTimeout(t);
-  }, []);
+    if (isEditing) {
+      async function fetchProduct() {
+        try {
+          const data = await apiFetch<ProductData>(`/api/products/${editId}`);
+          setNetwork(data.network);
+          setBrand(data.brand);
+          setNomenclature(data.nomenclature);
+          setLink(data.link || "");
+          setMonthlyPlanQty(String(data.monthlyPlanQty));
+          setIsActive(data.isActive);
+          setThumbnailPath(data.thumbnailPath);
+        } catch (err) {
+          console.error("Failed to fetch product:", err);
+        } finally {
+          setPageLoading(false);
+        }
+      }
+      fetchProduct();
+    } else {
+      setPageLoading(false);
+    }
+  }, [isEditing, editId]);
 
-  if (demoState === "loading" || showLoading) {
-    return <LoadingState type="form" count={6} />;
-  }
+  const handleThumbnailUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  const handleSubmit = (e: React.FormEvent) => {
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("subfolder", "products");
+      const result = await apiUpload<{ filePath: string }>(`/api/upload`, formData);
+      setThumbnailPath(result.filePath);
+    } catch (err) {
+      console.error("Failed to upload thumbnail:", err);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
@@ -55,11 +100,40 @@ export function ProductFormPage() {
     if (Object.keys(newErrors).length > 0) return;
 
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const payload = {
+        network,
+        brand: brand.trim(),
+        nomenclature: nomenclature.trim(),
+        link: link.trim(),
+        monthlyPlanQty: Number(monthlyPlanQty),
+        isActive,
+        thumbnailPath,
+      };
+
+      if (isEditing) {
+        await apiFetch(`/api/products/${editId}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await apiFetch("/api/products", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
+
       navigate("admin-products");
-    }, 600);
+    } catch (err) {
+      setErrors({ form: err instanceof Error ? err.message : "Ошибка сохранения" });
+    } finally {
+      setLoading(false);
+    }
   };
+
+  if (pageLoading) {
+    return <LoadingState type="form" count={6} />;
+  }
 
   return (
     <div className="max-w-2xl">
@@ -110,11 +184,18 @@ export function ProductFormPage() {
 
             <div className="space-y-2">
               <Label>Скрин товара</Label>
-              <div className="border-2 border-dashed rounded-lg p-4 text-center hover:border-primary/50 transition-colors cursor-pointer">
-                <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
-                <p className="text-xs text-muted-foreground">Загрузите изображение товара</p>
-                <input type="file" className="hidden" accept="image/*" />
-              </div>
+              {thumbnailPath ? (
+                <div className="relative">
+                  <img src={thumbnailPath} alt="Thumbnail" className="w-24 h-24 object-cover rounded border" />
+                  <Button type="button" variant="ghost" size="sm" className="mt-1 text-xs" onClick={() => setThumbnailPath(null)}>Удалить</Button>
+                </div>
+              ) : (
+                <label className="border-2 border-dashed rounded-lg p-4 text-center hover:border-primary/50 transition-colors cursor-pointer block">
+                  <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
+                  <p className="text-xs text-muted-foreground">{uploading ? "Загрузка..." : "Загрузите изображение товара"}</p>
+                  <input type="file" className="hidden" accept="image/*" onChange={handleThumbnailUpload} disabled={uploading} />
+                </label>
+              )}
             </div>
 
             <div className="space-y-2">

@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -14,19 +8,90 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id        Int       @id @default(autoincrement())
+  name      String
+  email     String    @unique
+  password  String
+  role      Role      @default(USER)
+  isBlocked Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  groups    PurchaseGroup[]
 }
 
-model Post {
-  id        String   @id @default(cuid())
-  title     String
-  content   String?
-  published Boolean  @default(false)
-  authorId  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+enum Role {
+  ADMIN
+  MODERATOR
+  USER
+}
+
+model Product {
+  id             Int       @id @default(autoincrement())
+  network        String
+  brand          String
+  nomenclature   String
+  link           String?
+  monthlyPlanQty Int       @default(0)
+  isActive       Boolean   @default(true)
+  thumbnailPath  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  groupItems     PurchaseGroupItem[]
+}
+
+model PurchaseGroup {
+  id               Int       @id @default(autoincrement())
+  userId           Int
+  user             User      @relation(fields: [userId], references: [id])
+  network          String
+  name             String
+  phone            String?
+  period           String
+  status           GroupStatus @default(ACTIVE)
+  discountCardPath String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  items            PurchaseGroupItem[]
+  receipts         Receipt[]
+}
+
+enum GroupStatus {
+  ACTIVE
+  COMPLETED
+}
+
+model PurchaseGroupItem {
+  id           Int       @id @default(autoincrement())
+  groupId      Int
+  group        PurchaseGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  productId    Int
+  product      Product   @relation(fields: [productId], references: [id])
+  assignedQty  Int       @default(1)
+  purchasedQty Int       @default(0)
+  userMarkedQty Int      @default(0)
+  modConfirmed Boolean   @default(false)
+}
+
+model Receipt {
+  id           Int       @id @default(autoincrement())
+  groupId      Int
+  group        PurchaseGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  filePath     String
+  originalName String?
+  uploadedAt   DateTime  @default(now())
+}
+
+model InviteCode {
+  id        Int        @id @default(autoincrement())
+  code      String     @unique
+  role      Role       @default(USER)
+  status    CodeStatus @default(UNUSED)
+  usedById  Int?
+  createdAt DateTime   @default(now())
+  usedAt    DateTime?
+}
+
+enum CodeStatus {
+  UNUSED
+  USED
+  EXPIRED
 }

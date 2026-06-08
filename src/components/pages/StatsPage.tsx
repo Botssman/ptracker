@@ -1,18 +1,57 @@
 "use client";
 
-import { statsByProducts, statsByUsers } from "@/lib/mock-data";
+import { useState, useEffect } from "react";
+import { apiFetch } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState } from "@/components/shared/LoadingState";
-import { useDemoState } from "@/app/page";
 import { BarChart3, Users, Package, TrendingUp } from "lucide-react";
 
-export function StatsPage() {
-  const { demoState } = useDemoState();
+interface StatsByProduct {
+  productId: number;
+  brand: string;
+  nomenclature: string;
+  monthlyPlan: number;
+  assigned: number;
+  confirmedByUser: number;
+  confirmedByModerator: number;
+}
 
-  if (demoState === "loading") {
+interface StatsByUser {
+  userId: number;
+  name: string;
+  email: string;
+  groupsCount: number;
+  assignedItems: number;
+  confirmedItems: number;
+}
+
+interface StatsData {
+  byProducts: StatsByProduct[];
+  byUsers: StatsByUser[];
+}
+
+export function StatsPage() {
+  const [stats, setStats] = useState<StatsData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchStats() {
+      try {
+        const data = await apiFetch<StatsData>("/api/stats");
+        setStats(data);
+      } catch (err) {
+        console.error("Failed to fetch stats:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchStats();
+  }, []);
+
+  if (loading) {
     return (
       <div>
         <h1 className="text-2xl font-bold mb-6">Статистика</h1>
@@ -21,8 +60,8 @@ export function StatsPage() {
     );
   }
 
-  const productStats = demoState === "empty" ? [] : statsByProducts;
-  const userStats = demoState === "empty" ? [] : statsByUsers;
+  const productStats = stats?.byProducts || [];
+  const userStats = stats?.byUsers || [];
 
   // Summary cards
   const totalPlan = productStats.reduce((sum, p) => sum + p.monthlyPlan, 0);

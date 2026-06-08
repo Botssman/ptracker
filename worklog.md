@@ -102,3 +102,162 @@ Built a complete frontend prototype for a Purchase Tracking System (Систем
 - All pages support loading/empty/loaded demo states
 - Touch-friendly targets (minimum 44px)
 - Semantic HTML with proper labels and ARIA support
+
+## Entry 2 — 2026-06-08: Fullstack conversion — from frontend-only to full Next.js backend
+
+### Summary
+Converted the Purchase Tracker from a frontend-only prototype with mock data to a fullstack Next.js application with real backend: Prisma ORM database, NextAuth.js authentication, complete API routes, and frontend wired to real data.
+
+### Files Created
+
+1. **`/prisma/schema.prisma`** — Complete database schema with:
+   - `User` model (id, name, email, password, role, isBlocked)
+   - `Product` model (network, brand, nomenclature, link, monthlyPlanQty, isActive, thumbnailPath)
+   - `PurchaseGroup` model (userId, network, name, phone, period, status, discountCardPath)
+   - `PurchaseGroupItem` model (groupId, productId, assignedQty, purchasedQty, userMarkedQty, modConfirmed)
+   - `Receipt` model (groupId, filePath, originalName)
+   - `InviteCode` model (code, role, status, usedById)
+   - Enums: `Role` (ADMIN/MODERATOR/USER), `GroupStatus` (ACTIVE/COMPLETED), `CodeStatus` (UNUSED/USED/EXPIRED)
+   - SQLite database with autoincrement IDs
+
+2. **`/prisma/seed.ts`** — Database seed script:
+   - Admin: admin@example.com / password123
+   - Moderator: maria@example.com / password123
+   - Users: alex@example.com, elena@example.com, dmitry@example.com, olga@example.com (all password123)
+   - 12 products across 5 networks
+   - 6 invite codes (mix of UNUSED/USED/EXPIRED)
+   - 7 purchase groups with 12 items and 6 receipts
+
+3. **`/src/lib/auth.ts`** — NextAuth.js v4 configuration:
+   - Credentials provider (email + password)
+   - JWT strategy with role and userId in token
+   - Custom callbacks for session/jwt enrichment
+   - Dev secret for development
+
+4. **`/src/lib/auth-context.tsx`** — React auth context provider:
+   - `useAuth()` hook with user, isAuthenticated, isLoading, login, register, logout, validateInviteCode
+   - Uses `signIn`/`signOut` from next-auth/react for proper CSRF handling
+   - Auto-fetches session on mount
+
+5. **`/src/lib/api.ts`** — API client wrapper:
+   - `apiFetch<T>()` — Generic fetch wrapper with credentials, error handling, 401/403 handling
+   - `apiUpload<T>()` — FormData upload helper
+   - `ApiError` class for typed error handling
+
+6. **`/src/middleware.ts`** — Auth middleware:
+   - Protects all `/api/` routes (except `/api/auth/*`)
+   - Requires authentication for API access
+   - Admin-only routes: `/api/users`, `/api/invite-codes`, `/api/stats`
+   - JWT token validation via next-auth/jwt
+
+7. **API Routes (17 route files):**
+   - `/api/auth/[...nextauth]/route.ts` — NextAuth handler
+   - `/api/auth/register/route.ts` — Register with invite code
+   - `/api/auth/invite/validate/route.ts` — Validate invite code
+   - `/api/products/route.ts` — GET (list), POST (create)
+   - `/api/products/[id]/route.ts` — GET, PUT, DELETE
+   - `/api/groups/route.ts` — GET (list with enrichment), POST (create with items)
+   - `/api/groups/[id]/route.ts` — GET (with items/receipts), PUT, DELETE
+   - `/api/groups/[id]/items/route.ts` — POST (add items)
+   - `/api/groups/[id]/items/[itemId]/route.ts` — PUT, DELETE
+   - `/api/groups/[id]/receipts/route.ts` — GET, POST (file upload)
+   - `/api/receipts/[id]/route.ts` — DELETE (with file cleanup)
+   - `/api/users/route.ts` — GET (admin only)
+   - `/api/users/[id]/route.ts` — PUT (admin only)
+   - `/api/invite-codes/route.ts` — GET (admin), POST (admin, generate code)
+   - `/api/stats/route.ts` — GET (admin, byProducts + byUsers)
+   - `/api/upload/route.ts` — POST (generic file upload)
+
+### Files Modified
+
+8. **`/src/app/page.tsx`** — Replaced demo switcher with real auth:
+   - Removed `DemoStateContext` and `useDemoState` export
+   - Added `AuthProvider` wrapping `RouterProvider`
+   - `AppContent` uses `useAuth()` for auth state
+   - Role mapping: ADMIN→admin, MODERATOR→moderator, USER→user
+   - Loading spinner during session check
+   - Clean logout flow via `signOut`
+
+9. **`/src/components/layout/AppHeader.tsx`** — Updated for real auth:
+   - Uses `UserRole` from `@/lib/auth-context` instead of mock-data
+   - Nav items mapped to ADMIN/MODERATOR/USER roles
+   - Displays real user name in header
+   - Logout via `signOut` from next-auth/react
+
+10. **`/src/components/layout/AppLayout.tsx`** — Updated for real auth:
+    - Accepts `userName` prop
+    - Uses `UserRole` from auth-context
+
+11. **`/src/components/pages/InvitePage.tsx`** — Real API integration:
+    - Uses `validateInviteCode` from auth context
+    - Passes code and codeRole to register page
+
+12. **`/src/components/pages/RegisterPage.tsx`** — Real API integration:
+    - Uses `register` from auth context (auto-login after registration)
+    - Displays role from invite code
+
+13. **`/src/components/pages/LoginPage.tsx`** — Real API integration:
+    - Uses `login` from auth context (next-auth signIn)
+    - Error handling for invalid credentials
+
+14. **`/src/components/pages/UserGroupsPage.tsx`** — Real API integration:
+    - Fetches groups from `/api/groups` on mount
+    - Loading/empty/data states with React state
+
+15. **`/src/components/pages/GroupDetailPage.tsx`** — Real API integration:
+    - Fetches group detail from `/api/groups/[id]` with items and receipts
+    - Real purchase quantity updates via PUT API
+    - Real receipt upload via POST with FormData
+    - Receipt deletion via DELETE API
+
+16. **`/src/components/pages/AdminProductsPage.tsx`** — Real API integration:
+    - Fetches products from `/api/products`
+    - Real delete via DELETE API with confirmation
+
+17. **`/src/components/pages/ProductFormPage.tsx`** — Real API integration:
+    - Fetches product for editing from `/api/products/[id]`
+    - Create via POST, update via PUT
+    - Thumbnail upload via `/api/upload`
+
+18. **`/src/components/pages/AdminGroupsPage.tsx`** — Real API integration:
+    - Fetches groups and users from API
+    - Status filter uses ACTIVE/COMPLETED enum values
+
+19. **`/src/components/pages/GroupFormPage.tsx`** — Real API integration:
+    - Fetches users and products from API
+    - Group create via POST, update via PUT
+    - Discount card upload via `/api/upload`
+
+20. **`/src/components/pages/AdminUsersPage.tsx`** — Real API integration:
+    - Fetches users from `/api/users`
+    - Edit dialog saves via PUT API
+    - Block/unblock via PUT API
+    - Shows block status badge
+
+21. **`/src/components/pages/InviteCodesPage.tsx`** — Real API integration:
+    - Fetches codes from `/api/invite-codes`
+    - Generate via POST API (server-side code generation)
+    - Copy to clipboard functionality
+
+22. **`/src/components/pages/StatsPage.tsx`** — Real API integration:
+    - Fetches stats from `/api/stats`
+    - Summary cards and tables from real data
+
+23. **`/package.json`** — Added seed scripts:
+    - `"db:seed": "bun prisma/db seed"`
+    - `"prisma:seed": "bun prisma/seed.ts"`
+    - Prisma seed configuration
+
+24. **`/.env`** — Added NextAuth environment variables:
+    - `NEXTAUTH_URL=http://localhost:3000`
+    - `NEXTAUTH_SECRET=dev-secret-change-in-production`
+
+### Key Architecture Decisions
+
+- **Database**: SQLite via Prisma ORM (autoincrement integer IDs)
+- **Auth**: NextAuth.js v4 with Credentials provider, JWT strategy
+- **API Design**: RESTful routes with role-based access control
+- **Frontend**: Kept client-side routing (SPA pattern) but wired to real API
+- **File Uploads**: Saved to `/public/uploads/` with multipart form data
+- **Password**: Plain text comparison for development (bcrypt recommended for production)
+- **Role System**: Three-tier (ADMIN > MODERATOR > USER) with middleware enforcement

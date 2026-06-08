@@ -1,6 +1,6 @@
 "use client";
 
-import type { UserRole } from "@/lib/mock-data";
+import type { UserRole } from "@/lib/auth-context";
 import { AppHeader, GuestHeader } from "./AppHeader";
 
 interface AppLayoutProps {
@@ -8,16 +8,17 @@ interface AppLayoutProps {
   onLogout: () => void;
   onLogin: () => void;
   onInvite: () => void;
+  userName?: string;
   children: React.ReactNode;
 }
 
-export function AppLayout({ role, onLogout, onLogin, onInvite, children }: AppLayoutProps) {
+export function AppLayout({ role, onLogout, onLogin, onInvite, userName, children }: AppLayoutProps) {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {role === "guest" ? (
         <GuestHeader onLogin={onLogin} onInvite={onInvite} />
       ) : (
-        <AppHeader role={role} onLogout={onLogout} />
+        <AppHeader role={role} onLogout={onLogout} userName={userName} />
       )}
       <main className="flex-1 w-full">
         <div className="container mx-auto px-4 py-6 max-w-7xl">
