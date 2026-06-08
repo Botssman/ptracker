@@ -1,0 +1,54 @@
+name: Деплой на сервер
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v4
+
+      - name: Установить Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Установить зависимости
+        run: bun install
+
+      - name: Генерация Prisma клиента
+        run: bun prisma generate
+
+      - name: Сборка проекта
+        run: bun run build
+        env:
+          DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
+
+      - name: Настройка SSH ключа
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+
+      - name: Копирование файлов на сервер
+        run: |
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            --exclude='prisma/dev.db' \
+            ./ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/var/www/ptracker/
+
+      - name: Установка и перезапуск на сервере
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'DEPLOY'
+          cd /var/www/ptracker
+          bun install --production
+          bun prisma generate
+          bun prisma db push --skip-generate
+          systemctl restart ptracker
+          echo "✅ Деплой завершён!"
+          DEPLOY
