@@ -56,7 +56,11 @@ interface AddedItem {
   qty: number;
 }
 
-const networks = ["Магнит", "Пятёрочка", "Лента", "Перекрёсток", "Ашан"];
+interface NetworkData {
+  id: number;
+  name: string;
+  createdAt: string;
+}
 
 export function GroupFormPage() {
   const { routeParams, navigate } = useRouterContext();
@@ -80,16 +84,19 @@ export function GroupFormPage() {
 
   const [users, setUsers] = useState<UserData[]>([]);
   const [products, setProducts] = useState<ProductData[]>([]);
+  const [networks, setNetworks] = useState<NetworkData[]>([]);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const [usersData, productsData] = await Promise.all([
+        const [usersData, productsData, networksData] = await Promise.all([
           apiFetch<UserData[]>("/api/users"),
           apiFetch<ProductData[]>("/api/products"),
+          apiFetch<NetworkData[]>("/api/networks"),
         ]);
         setUsers(usersData);
         setProducts(productsData);
+        setNetworks(networksData);
 
         if (isEditing) {
           const groupData = await apiFetch<GroupDetail>(`/api/groups/${editId}`);
@@ -251,7 +258,7 @@ export function GroupFormPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {networks.map(n => (
-                    <SelectItem key={n} value={n}>{n}</SelectItem>
+                    <SelectItem key={n.id} value={n.name}>{n.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -332,7 +339,7 @@ export function GroupFormPage() {
                   <SelectContent>
                     <SelectItem value="all">Все сети</SelectItem>
                     {networks.map(n => (
-                      <SelectItem key={n} value={n}>{n}</SelectItem>
+                      <SelectItem key={n.id} value={n.name}>{n.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

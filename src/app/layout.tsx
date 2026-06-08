@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   title: "Purchase Tracker — Система учёта закупок",
   description: "Система управления закупками и отслеживания заданий. Учёт товаров, групп заданий и чеков.",
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/favicon.png",
   },
 };
 

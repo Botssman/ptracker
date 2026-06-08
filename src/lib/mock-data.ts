@@ -1,7 +1,5 @@
 // Mock Data for Purchase Tracking System
 
-export const networks = ["Магнит", "Пятёрочка", "Лента", "Перекрёсток", "Ашан"];
-
 export type Product = {
   id: number;
   network: string;

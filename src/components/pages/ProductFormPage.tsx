@@ -25,7 +25,11 @@ interface ProductData {
   thumbnailPath: string | null;
 }
 
-const networks = ["Магнит", "Пятёрочка", "Лента", "Перекрёсток", "Ашан"];
+interface NetworkData {
+  id: number;
+  name: string;
+  createdAt: string;
+}
 
 export function ProductFormPage() {
   const { routeParams, navigate } = useRouterContext();
@@ -41,13 +45,17 @@ export function ProductFormPage() {
   const [thumbnailPath, setThumbnailPath] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
-  const [pageLoading, setPageLoading] = useState(isEditing);
+  const [pageLoading, setPageLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [networks, setNetworks] = useState<NetworkData[]>([]);
 
   useEffect(() => {
-    if (isEditing) {
-      async function fetchProduct() {
-        try {
+    async function fetchData() {
+      try {
+        const networksData = await apiFetch<NetworkData[]>("/api/networks");
+        setNetworks(networksData);
+
+        if (isEditing) {
           const data = await apiFetch<ProductData>(`/api/products/${editId}`);
           setNetwork(data.network);
           setBrand(data.brand);
@@ -56,16 +64,14 @@ export function ProductFormPage() {
           setMonthlyPlanQty(String(data.monthlyPlanQty));
           setIsActive(data.isActive);
           setThumbnailPath(data.thumbnailPath);
-        } catch (err) {
-          console.error("Failed to fetch product:", err);
-        } finally {
-          setPageLoading(false);
         }
+      } catch (err) {
+        console.error("Failed to fetch data:", err);
+      } finally {
+        setPageLoading(false);
       }
-      fetchProduct();
-    } else {
-      setPageLoading(false);
     }
+    fetchData();
   }, [isEditing, editId]);
 
   const handleThumbnailUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -157,7 +163,7 @@ export function ProductFormPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {networks.map(n => (
-                    <SelectItem key={n} value={n}>{n}</SelectItem>
+                    <SelectItem key={n.id} value={n.name}>{n.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

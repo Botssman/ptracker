@@ -35,10 +35,17 @@ interface GroupData {
   completedItems: number;
 }
 
+interface NetworkData {
+  id: number;
+  name: string;
+  createdAt: string;
+}
+
 export function AdminGroupsPage() {
   const { navigate } = useRouterContext();
   const [groups, setGroups] = useState<GroupData[]>([]);
   const [users, setUsers] = useState<UserData[]>([]);
+  const [networks, setNetworks] = useState<NetworkData[]>([]);
   const [loading, setLoading] = useState(true);
   const [userFilter, setUserFilter] = useState<string>("all");
   const [networkFilter, setNetworkFilter] = useState<string>("all");
@@ -47,12 +54,14 @@ export function AdminGroupsPage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [groupsData, usersData] = await Promise.all([
+        const [groupsData, usersData, networksData] = await Promise.all([
           apiFetch<GroupData[]>("/api/groups"),
           apiFetch<UserData[]>("/api/users"),
+          apiFetch<NetworkData[]>("/api/networks"),
         ]);
         setGroups(groupsData);
         setUsers(usersData);
+        setNetworks(networksData);
       } catch (err) {
         console.error("Failed to fetch data:", err);
       } finally {
@@ -85,7 +94,7 @@ export function AdminGroupsPage() {
     filteredGroups = filteredGroups.filter(g => g.status === statusFilter);
   }
 
-  const networks = [...new Set(groups.map(g => g.network))];
+  const networkNames = networks.map(n => n.name);
 
   return (
     <div>
@@ -118,7 +127,7 @@ export function AdminGroupsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Все сети</SelectItem>
-                {networks.map(n => (
+                {networkNames.map(n => (
                   <SelectItem key={n} value={n}>{n}</SelectItem>
                 ))}
               </SelectContent>

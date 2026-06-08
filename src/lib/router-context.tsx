@@ -12,6 +12,7 @@ export type PageName =
   | "product-form"
   | "admin-groups"
   | "group-form"
+  | "admin-networks"
   | "admin-users"
   | "invite-codes"
   | "stats";

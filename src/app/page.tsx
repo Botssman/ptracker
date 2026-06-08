@@ -12,6 +12,7 @@ import { AdminProductsPage } from "@/components/pages/AdminProductsPage";
 import { ProductFormPage } from "@/components/pages/ProductFormPage";
 import { AdminGroupsPage } from "@/components/pages/AdminGroupsPage";
 import { GroupFormPage } from "@/components/pages/GroupFormPage";
+import { AdminNetworksPage } from "@/components/pages/AdminNetworksPage";
 import { AdminUsersPage } from "@/components/pages/AdminUsersPage";
 import { InviteCodesPage } from "@/components/pages/InviteCodesPage";
 import { StatsPage } from "@/components/pages/StatsPage";
@@ -38,6 +39,8 @@ function PageRenderer() {
       return <AdminGroupsPage />;
     case "group-form":
       return <GroupFormPage />;
+    case "admin-networks":
+      return <AdminNetworksPage />;
     case "admin-users":
       return <AdminUsersPage />;
     case "invite-codes":

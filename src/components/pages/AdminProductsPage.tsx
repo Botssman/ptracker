@@ -24,26 +24,37 @@ interface ProductData {
   thumbnailPath: string | null;
 }
 
+interface NetworkData {
+  id: number;
+  name: string;
+  createdAt: string;
+}
+
 export function AdminProductsPage() {
   const { navigate } = useRouterContext();
   const [products, setProducts] = useState<ProductData[]>([]);
+  const [networks, setNetworks] = useState<NetworkData[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [networkFilter, setNetworkFilter] = useState<string>("all");
   const [brandFilter, setBrandFilter] = useState<string>("all");
 
   useEffect(() => {
-    async function fetchProducts() {
+    async function fetchData() {
       try {
-        const data = await apiFetch<ProductData[]>("/api/products");
-        setProducts(data);
+        const [productsData, networksData] = await Promise.all([
+          apiFetch<ProductData[]>("/api/products"),
+          apiFetch<NetworkData[]>("/api/networks"),
+        ]);
+        setProducts(productsData);
+        setNetworks(networksData);
       } catch (err) {
         console.error("Failed to fetch products:", err);
       } finally {
         setLoading(false);
       }
     }
-    fetchProducts();
+    fetchData();
   }, []);
 
   const handleDelete = async (id: number) => {
@@ -82,7 +93,7 @@ export function AdminProductsPage() {
     filteredProducts = filteredProducts.filter(p => p.brand === brandFilter);
   }
 
-  const networks = [...new Set(products.map(p => p.network))];
+  const networkNames = networks.map(n => n.name);
   const brands = [...new Set(products.map(p => p.brand))];
 
   return (
@@ -114,7 +125,7 @@ export function AdminProductsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Все сети</SelectItem>
-                {networks.map(n => (
+                {networkNames.map(n => (
                   <SelectItem key={n} value={n}>{n}</SelectItem>
                 ))}
               </SelectContent>

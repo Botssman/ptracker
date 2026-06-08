@@ -45,7 +45,8 @@ export async function middleware(request: NextRequest) {
   if (
     pathname.startsWith("/api/products") ||
     pathname.startsWith("/api/groups") ||
-    pathname.startsWith("/api/receipts")
+    pathname.startsWith("/api/receipts") ||
+    pathname.startsWith("/api/networks")
   ) {
     // Read operations are allowed for authenticated users
     // Write operations (POST, PUT, DELETE) checked in route handlers

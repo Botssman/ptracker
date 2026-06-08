@@ -95,3 +95,9 @@ enum CodeStatus {
   USED
   EXPIRED
 }
+
+model Network {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+}

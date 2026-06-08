@@ -23,6 +23,7 @@ const navItemsByRole: Record<UserRole, NavItem[]> = {
   ADMIN: [
     { label: "Группы заданий", page: "admin-groups" },
     { label: "Товары", page: "admin-products" },
+    { label: "Сети магазинов", page: "admin-networks" },
     { label: "Пользователи", page: "admin-users" },
     { label: "Коды приглашения", page: "invite-codes" },
     { label: "Статистика", page: "stats" },

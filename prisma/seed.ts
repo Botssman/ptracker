@@ -11,7 +11,17 @@ async function main() {
   await prisma.purchaseGroup.deleteMany();
   await prisma.inviteCode.deleteMany();
   await prisma.product.deleteMany();
+  await prisma.network.deleteMany();
   await prisma.user.deleteMany();
+
+  // Create networks
+  const network1 = await prisma.network.create({ data: { name: "Магнит" } });
+  const network2 = await prisma.network.create({ data: { name: "Пятёрочка" } });
+  const network3 = await prisma.network.create({ data: { name: "Лента" } });
+  const network4 = await prisma.network.create({ data: { name: "Перекрёсток" } });
+  const network5 = await prisma.network.create({ data: { name: "Ашан" } });
+
+  console.log("Networks created: 5");
 
   // Create users
   const admin = await prisma.user.create({

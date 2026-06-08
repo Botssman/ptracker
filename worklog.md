@@ -261,3 +261,63 @@ Converted the Purchase Tracker from a frontend-only prototype with mock data to 
 - **File Uploads**: Saved to `/public/uploads/` with multipart form data
 - **Password**: Plain text comparison for development (bcrypt recommended for production)
 - **Role System**: Three-tier (ADMIN > MODERATOR > USER) with middleware enforcement
+
+## Entry 3 — 2026-03-05: Networks management + custom favicon
+
+### Summary
+Added a Network model and full CRUD management for store networks (Сети магазинов), replacing hardcoded network lists across the app with data loaded from the API. Also added a custom AI-generated favicon.
+
+### Files Created
+
+1. **`/src/app/api/networks/route.ts`** — Networks API (list + create):
+   - GET — list all networks (any authenticated user)
+   - POST — create network (admin/moderator only), unique name validation
+
+2. **`/src/app/api/networks/[id]/route.ts`** — Networks API (update + delete):
+   - PUT — update network name (admin only), unique name validation
+   - DELETE — delete network (admin only), checks if used by products/groups before allowing deletion
+
+3. **`/src/components/pages/AdminNetworksPage.tsx`** — Admin networks management page:
+   - Title: "Сети магазинов"
+   - Desktop table with columns: ID, Название, Дата создания, Действия (Редактировать, Удалить)
+   - Mobile card layout
+   - "Добавить сеть" button
+   - Add/Edit dialog with name field
+   - Delete confirmation dialog with usage check error display
+   - Empty state and loading skeleton
+
+4. **`/public/favicon.png`** — AI-generated favicon (shopping cart with checkmark, emerald green)
+
+### Files Modified
+
+5. **`/prisma/schema.prisma`** — Added Network model:
+   - `id` (Int, autoincrement PK)
+   - `name` (String, unique)
+   - `createdAt` (DateTime, default now())
+   - Kept existing `network` string fields in Product and PurchaseGroup as-is
+
+6. **`/prisma/seed.ts`** — Added Network seeding:
+   - Inserted 5 networks: Магнит, Пятёрочка, Лента, Перекрёсток, Ашан
+   - Added `network.deleteMany()` to cleanup
+
+7. **`/src/app/layout.tsx`** — Updated favicon:
+   - Changed icon from `https://z-cdn.chatglm.cn/z-ai/static/logo.svg` to `/favicon.png`
+   - Title remains "Purchase Tracker — Система учёта закупок"
+
+8. **`/src/lib/mock-data.ts`** — Removed `export const networks = [...]` line (now loaded from API)
+
+9. **`/src/lib/router-context.tsx`** — Added "admin-networks" to `PageName` type
+
+10. **`/src/components/layout/AppHeader.tsx`** — Added "Сети магазинов" nav item for ADMIN role (between "Товары" and "Пользователи")
+
+11. **`/src/app/page.tsx`** — Added `AdminNetworksPage` import and "admin-networks" case in PageRenderer
+
+12. **`/src/middleware.ts`** — Added `/api/networks` to the moderator/admin routes list
+
+13. **`/src/components/pages/AdminProductsPage.tsx`** — Networks now loaded from `/api/networks` instead of derived from products
+
+14. **`/src/components/pages/ProductFormPage.tsx`** — Networks now loaded from `/api/networks` for the network select field (replaced hardcoded array)
+
+15. **`/src/components/pages/AdminGroupsPage.tsx`** — Networks now loaded from `/api/networks` for the filter dropdown
+
+16. **`/src/components/pages/GroupFormPage.tsx`** — Networks now loaded from `/api/networks` for both the group network select and the product search filter
