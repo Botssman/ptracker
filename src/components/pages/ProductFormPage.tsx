@@ -265,18 +265,9 @@ export function ProductFormPage() {
                   <div className="w-24 h-24 rounded-lg border overflow-hidden bg-muted">
                     <img
                       src={thumbnailPath}
-                      alt="Thumbnail"
+                      alt="Фото товара"
                       className="w-full h-full object-cover"
-                      crossOrigin={isExternalImage ? "anonymous" : undefined}
-                      referrerPolicy={isExternalImage ? "no-referrer" : undefined}
-                      onError={(e) => {
-                        // If external image fails to load, try with no-referrer
-                        const img = e.currentTarget;
-                        if (!img.dataset.retried) {
-                          img.dataset.retried = "1";
-                          img.src = thumbnailPath;
-                        }
-                      }}
+                      referrerPolicy="no-referrer"
                     />
                   </div>
                   <div className="flex items-center gap-1 mt-1">
