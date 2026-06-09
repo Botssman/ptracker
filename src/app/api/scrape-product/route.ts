@@ -32,7 +32,6 @@ function makeAbsoluteUrl(imageUrl: string, pageUrl: string): string {
 
 function cleanTitle(raw: string): string {
   let title = raw
-    // Убираем типичные суффиксы магазинов
     .replace(/\s*[—––]\s*купить.*$/i, "")
     .replace(/\s*—\s*Магнит\s*$/i, "")
     .replace(/\s*—\s*Лента\s*$/i, "")
@@ -41,13 +40,11 @@ function cleanTitle(raw: string): string {
     .replace(/\s*\|\s*Пятёрочка\s*$/i, "")
     .trim();
 
-  // Убираем часть после | если до неё достаточно текста
   const pipeMatch = title.match(/^(.+?)\s*\|\s*.+$/);
   if (pipeMatch && pipeMatch[1].trim().length > 5) {
     title = pipeMatch[1].trim();
   }
 
-  // Убираем часть после — если до неё достаточно текста
   const dashMatch = title.match(/^(.+?)\s*[—––]\s*.+$/);
   if (dashMatch && dashMatch[1].trim().length > 5) {
     title = dashMatch[1].trim();
@@ -56,7 +53,6 @@ function cleanTitle(raw: string): string {
   return title;
 }
 
-// Проверяем что URL похож на картинку товара, а не лого/иконку
 function isProductImage(url: string): boolean {
   if (!url) return false;
   const lower = url.toLowerCase();
@@ -65,9 +61,15 @@ function isProductImage(url: string): boolean {
     "favicon", "icon", "placeholder", "default", "promo",
     "no-image", "not-found", "sprite", "pixel", "1x1",
     "mc.yandex", "analytics", "counter", "beacon",
+    "duckduckgo", "ddg",
   ];
   if (skipPatterns.some(p => lower.includes(p))) return false;
   return true;
+}
+
+// Проверяем, заблокирован ли сайт (Qrator, ServicePipe и т.д.)
+function isBlockedHtml(html: string): boolean {
+  return /qauth\.js|qrator|challenge-platform|servicepipe|__qrator/i.test(html);
 }
 
 // ============================
@@ -126,7 +128,6 @@ function extractImage(html: string, pageUrl: string): string {
   let imageUrl = "";
 
   // 1. Галерея товара — лучший источник качественной картинки
-  //    Магнит: class="product-details-gallery__slide-image" src="..."
   const galleryPatterns = [
     /class="[^"]*product-details-gallery__slide-image[^"]*"[^>]*src="([^"]+)"/i,
     /class="[^"]*(?:product.*?gallery|gallery.*?slide|item.*?photo)[^"]*"[^>]*src="([^"]+)"/i,
@@ -139,7 +140,7 @@ function extractImage(html: string, pageUrl: string): string {
     }
   }
 
-  // 2. Картинки с CDN / товаров (если галерея не нашлась)
+  // 2. Картинки с CDN / товаров
   if (!imageUrl) {
     const allImgSrcs = [...html.matchAll(/<img[^>]+src="([^"]+)"/gi)]
       .map(m => m[1])
@@ -149,7 +150,6 @@ function extractImage(html: string, pageUrl: string): string {
       /images-foodtech|catalog|product|img-dostavka|cdn.*product|cloudinary.*product|lenta\.com|static\.|media\./i.test(src)
     );
 
-    // Выбираем большую картинку если есть
     const largeImage = cdnImages.find(src =>
       /\d{3,4}x\d{3,4}|rs:fit:\d{3,4}|w_\d{3,4}|width.*\d{3,4}|\d{3,4}_\d{3,4}/i.test(src)
     ) || cdnImages[0];
@@ -200,7 +200,106 @@ function extractImage(html: string, pageUrl: string): string {
 }
 
 // ============================
-// Основной обработчик: простой прямой запрос
+// Фолбэк: поиск через DuckDuckGo
+// ============================
+
+// Извлекаем поисковый запрос из URL товара
+function urlToSearchQuery(pageUrl: string): string {
+  try {
+    const urlObj = new URL(pageUrl);
+    // Берём последний сегмент пути (slug товара)
+    const slug = urlObj.pathname
+      .split("/")
+      .filter(p => p && p !== "cat" && p !== "d" && p !== "product" && p !== "catalog" && p !== "p")
+      .pop() || "";
+
+    // Заменяем дефисы и подчёркивания на пробелы
+    let query = slug.replace(/[-_]/g, " ").replace(/\d{6,}/g, "").replace(/\s+/g, " ").trim();
+
+    // Добавляем название магазина для контекста
+    const store = urlObj.hostname.replace("www.", "").replace(".ru", "").replace(".com", "");
+    if (query) {
+      query = `${query} ${store}`;
+    }
+
+    return query;
+  } catch {
+    return "";
+  }
+}
+
+// Транслитерация для поиска на русском
+function transliterateToRussian(text: string): string {
+  const map: Record<string, string> = {
+    "moloko": "молоко", "mayonez": "майонез", "ketchyp": "кетчуп",
+    "sous": "соус", "hleb": "хлеб", "syir": "сыр", "tvorog": "творог",
+    "smetana": "сметана", "kefir": "кефир", "maslo": "масло",
+    "yaytso": "яйцо", "kuritsa": "курица", "myaso": "мясо",
+    "ryiba": "рыба", "borshch": "борщ", "sup": "суп",
+    "sukhaya": "сухая", "myagkaya": "мягкая", "upakovka": "упаковка",
+    "sashet": "сашет", "pao": "ПАО", "russkiy": "русский",
+    "produkt": "продукт", "supersup": "суперсуп",
+  };
+  let result = text.toLowerCase();
+  for (const [eng, rus] of Object.entries(map)) {
+    result = result.replace(new RegExp(eng, "gi"), rus);
+  }
+  return result;
+}
+
+interface DDGResult {
+  title: string;
+  url: string;
+}
+
+// Поиск через DuckDuckGo HTML — возвращает список результатов
+async function searchDuckDuckGo(query: string): Promise<DDGResult[]> {
+  try {
+    const encodedQuery = encodeURIComponent(query);
+    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodedQuery}`;
+
+    const response = await fetch(ddgUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ru-RU,ru;q=0.9",
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) return [];
+
+    const html = await response.text();
+    const results: DDGResult[] = [];
+
+    // Парсим результаты DuckDuckGo
+    const linkMatches = [...html.matchAll(/<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi)];
+    for (const match of linkMatches) {
+      let linkUrl = match[1];
+      const linkTitle = match[2].replace(/<[^>]+>/g, "").trim();
+
+      // DuckDuckGo оборачивает ссылки через редирект
+      const uddgMatch = linkUrl.match(/uddg=([^&]+)/);
+      if (uddgMatch) {
+        linkUrl = decodeURIComponent(uddgMatch[1]);
+      } else if (linkUrl.startsWith("//duckduckgo.com/l/")) {
+        continue; // пропускаем внутренние ссылки DDG
+      }
+
+      if (linkTitle && linkUrl.startsWith("http")) {
+        results.push({ title: linkTitle, url: linkUrl });
+      }
+    }
+
+    return results;
+  } catch (err) {
+    console.error("[scrape-product] Ошибка DuckDuckGo:", err);
+    return [];
+  }
+}
+
+// ============================
+// Основной обработчик
 // ============================
 
 export async function POST(request: NextRequest) {
@@ -219,37 +318,121 @@ export async function POST(request: NextRequest) {
 
     console.log(`[scrape-product] Запрос: ${url}`);
 
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-      },
-      signal: AbortSignal.timeout(15000),
-    });
+    let title = "";
+    let imageUrl = "";
+    let method = "direct-fetch";
 
-    if (!response.ok) {
-      console.log(`[scrape-product] HTTP ${response.status} для ${url}`);
-      return NextResponse.json({
-        title: "",
-        imageUrl: "",
-        method: "direct-fetch",
+    // ==========================================
+    // Шаг 1: Прямой запрос (работает для Магнита)
+    // ==========================================
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+          "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+        },
+        signal: AbortSignal.timeout(15000),
       });
+
+      if (response.ok) {
+        const html = await response.text();
+
+        // Проверяем что страница не заблокирована антибот-защитой
+        if (!isBlockedHtml(html)) {
+          title = extractTitle(html);
+          imageUrl = extractImage(html, url);
+          console.log(`[direct-fetch] название="${title}", картинка=${imageUrl ? "найдена" : "нет"}`);
+        } else {
+          console.log(`[direct-fetch] Антибот-защита обнаружена, переключаемся на поиск`);
+        }
+      } else {
+        console.log(`[direct-fetch] HTTP ${response.status}`);
+      }
+    } catch (err) {
+      console.log(`[direct-fetch] Ошибка: ${err}`);
     }
 
-    const html = await response.text();
+    // ==========================================
+    // Шаг 2: Фолбэк через DuckDuckGo (для заблокированных сайтов)
+    // ==========================================
+    if (!title || !imageUrl) {
+      method = "ddg-search";
+      console.log(`[ddg-search] Ищем через DuckDuckGo...`);
 
-    const title = extractTitle(html);
-    const imageUrl = extractImage(html, url);
+      // Формируем поисковый запрос из URL
+      let searchQuery = urlToSearchQuery(url);
+      searchQuery = transliterateToRussian(searchQuery);
 
-    console.log(`[scrape-product] Результат: название="${title}", картинка=${imageUrl ? "найдена" : "нет"}`);
+      if (searchQuery.length < 3) {
+        console.log(`[ddg-search] Слишком короткий запрос: "${searchQuery}"`);
+      } else {
+        console.log(`[ddg-search] Запрос: "${searchQuery}"`);
+        const results = await searchDuckDuckGo(searchQuery);
+
+        // Берём название из первого подходящего результата
+        if (!title && results.length > 0) {
+          // Ищем результат, который выглядит как товар (а не категория/статья)
+          const productResult = results.find(r =>
+            !/каталог|доставк|купить с|цена|отзывы|рецепт/i.test(r.title)
+          ) || results[0];
+          title = cleanTitle(productResult.title);
+          console.log(`[ddg-search] Название: "${title}"`);
+        }
+
+        // Пробуем достать картинку с доступного сайта из результатов
+        if (!imageUrl && results.length > 0) {
+          // Приоритет: магнит (проверенный), потом другие
+          const magnitResult = results.find(r => r.url.includes("magnit.ru"));
+          const otherResult = results.find(r =>
+            !r.url.includes("lenta.com") &&
+            !r.url.includes("perekrestok.ru") &&
+            !r.url.includes("5ka.ru") &&
+            !r.url.includes("auchan.ru") &&
+            !r.url.includes("kuper.ru")
+          );
+
+          const urlsToTry = [magnitResult?.url, otherResult?.url].filter(Boolean) as string[];
+
+          for (const tryUrl of urlsToTry) {
+            try {
+              console.log(`[ddg-search] Пробуем получить картинку с: ${tryUrl}`);
+              const imgResponse = await fetch(tryUrl, {
+                headers: {
+                  "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                  "Accept-Language": "ru-RU,ru;q=0.9",
+                },
+                signal: AbortSignal.timeout(10000),
+              });
+
+              if (imgResponse.ok) {
+                const imgHtml = await imgResponse.text();
+                if (!isBlockedHtml(imgHtml)) {
+                  imageUrl = extractImage(imgHtml, tryUrl);
+                  if (imageUrl) {
+                    console.log(`[ddg-search] Картинка найдена!`);
+                    break;
+                  }
+                }
+              }
+            } catch {
+              // Пропускаем ошибки
+            }
+          }
+        }
+      }
+    }
+
+    console.log(`[scrape-product] Итог: метод=${method}, название="${title}", картинка=${imageUrl ? "найдена" : "нет"}`);
 
     return NextResponse.json({
       title: title || "",
       imageUrl: imageUrl || "",
-      method: "direct-fetch",
+      method,
     });
   } catch (error) {
     console.error("[scrape-product] Ошибка:", error);
