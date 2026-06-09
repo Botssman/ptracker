@@ -125,32 +125,46 @@ function extractTitle(html: string): string {
 function extractImage(html: string, pageUrl: string): string {
   let imageUrl = "";
 
-  // 1. Все <img> с фильтрацией на картинки товаров
-  const allImgSrcs = [...html.matchAll(/<img[^>]+src="([^"]+)"/gi)]
-    .map(m => m[1])
-    .filter(isProductImage);
-
-  // 2. Предпочитаем картинки с CDN / товаров
-  const cdnImages = allImgSrcs.filter(src =>
-    /images-foodtech|catalog|product|img-dostavka|cdn.*product|cloudinary.*product|lenta\.com|static\.|media\./i.test(src)
-  );
-
-  // Выбираем большую картинку если есть
-  const largeImage = cdnImages.find(src =>
-    /\d{3,4}x\d{3,4}|rs:fit:\d{3,4}|w_\d{3,4}|width.*\d{3,4}|\d{3,4}_\d{3,4}/i.test(src)
-  ) || cdnImages[0];
-
-  if (largeImage) {
-    imageUrl = largeImage;
-  } else if (allImgSrcs.length > 0) {
-    // Запасной вариант: любая большая картинка
-    const largeFallback = allImgSrcs.find(src =>
-      /\d{3,4}x\d{3,4}|rs:fit:\d{3,4}|w_\d{3,4}|\/large\/|\/big\/|\/full\//i.test(src)
-    );
-    imageUrl = largeFallback || allImgSrcs[0];
+  // 1. Галерея товара — лучший источник качественной картинки
+  //    Магнит: class="product-details-gallery__slide-image" src="..."
+  const galleryPatterns = [
+    /class="[^"]*product-details-gallery__slide-image[^"]*"[^>]*src="([^"]+)"/i,
+    /class="[^"]*(?:product.*?gallery|gallery.*?slide|item.*?photo)[^"]*"[^>]*src="([^"]+)"/i,
+  ];
+  for (const pattern of galleryPatterns) {
+    const match = html.match(pattern);
+    if (match && isProductImage(match[1])) {
+      imageUrl = match[1];
+      break;
+    }
   }
 
-  // 3. Schema.org JSON-LD — картинка товара из структурированных данных
+  // 2. Картинки с CDN / товаров (если галерея не нашлась)
+  if (!imageUrl) {
+    const allImgSrcs = [...html.matchAll(/<img[^>]+src="([^"]+)"/gi)]
+      .map(m => m[1])
+      .filter(isProductImage);
+
+    const cdnImages = allImgSrcs.filter(src =>
+      /images-foodtech|catalog|product|img-dostavka|cdn.*product|cloudinary.*product|lenta\.com|static\.|media\./i.test(src)
+    );
+
+    // Выбираем большую картинку если есть
+    const largeImage = cdnImages.find(src =>
+      /\d{3,4}x\d{3,4}|rs:fit:\d{3,4}|w_\d{3,4}|width.*\d{3,4}|\d{3,4}_\d{3,4}/i.test(src)
+    ) || cdnImages[0];
+
+    if (largeImage) {
+      imageUrl = largeImage;
+    } else if (allImgSrcs.length > 0) {
+      const largeFallback = allImgSrcs.find(src =>
+        /\d{3,4}x\d{3,4}|rs:fit:\d{3,4}|w_\d{3,4}|\/large\/|\/big\/|\/full\//i.test(src)
+      );
+      imageUrl = largeFallback || allImgSrcs[0];
+    }
+  }
+
+  // 3. Schema.org JSON-LD — картинка из структурированных данных
   if (!imageUrl) {
     const jsonLdMatches = html.matchAll(
       /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
@@ -172,7 +186,7 @@ function extractImage(html: string, pageUrl: string): string {
     }
   }
 
-  // 4. og:image — мета-тег Open Graph
+  // 4. og:image — самый последний вариант
   if (!imageUrl) {
     const ogImageMatch = html.match(
       /<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i
