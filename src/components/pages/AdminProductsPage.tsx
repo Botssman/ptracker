@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState } from "@/components/shared/LoadingState";
-import { Plus, Search, ExternalLink, Pencil, Trash2, Package, Check, X } from "lucide-react";
+import { Plus, Search, ExternalLink, Pencil, Trash2, Package, Check, X, Image as ImageIcon } from "lucide-react";
 
 interface ProductData {
   id: number;
@@ -154,6 +154,7 @@ export function AdminProductsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">Фото</TableHead>
                   <TableHead>Сеть</TableHead>
                   <TableHead>Бренд</TableHead>
                   <TableHead>Номенклатура</TableHead>
@@ -166,6 +167,20 @@ export function AdminProductsPage() {
               <TableBody>
                 {filteredProducts.map(product => (
                   <TableRow key={product.id}>
+                    <TableCell>
+                      <div className="w-10 h-10 rounded bg-muted flex items-center justify-center overflow-hidden shrink-0">
+                        {product.thumbnailPath ? (
+                          <img
+                            src={product.thumbnailPath}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            referrerPolicy={product.thumbnailPath.startsWith("http") ? "no-referrer" : undefined}
+                          />
+                        ) : (
+                          <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell><Badge variant="outline">{product.network}</Badge></TableCell>
                     <TableCell className="font-medium">{product.brand}</TableCell>
                     <TableCell className="max-w-xs truncate">{product.nomenclature}</TableCell>
@@ -201,27 +216,44 @@ export function AdminProductsPage() {
             {filteredProducts.map(product => (
               <Card key={product.id}>
                 <CardContent className="p-4">
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <Badge variant="outline" className="text-xs mb-1">{product.network}</Badge>
-                      <p className="font-medium text-sm">{product.brand}</p>
+                  <div className="flex items-start gap-3">
+                    {/* Product thumbnail */}
+                    <div className="w-12 h-12 rounded bg-muted flex items-center justify-center overflow-hidden shrink-0">
+                      {product.thumbnailPath ? (
+                        <img
+                          src={product.thumbnailPath}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          referrerPolicy={product.thumbnailPath.startsWith("http") ? "no-referrer" : undefined}
+                        />
+                      ) : (
+                        <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                      )}
                     </div>
-                    {product.isActive ? (
-                      <Badge className="text-xs bg-green-100 text-green-700">Активен</Badge>
-                    ) : (
-                      <Badge variant="secondary" className="text-xs">Неактивен</Badge>
-                    )}
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-2">{product.nomenclature}</p>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">План: {product.monthlyPlanQty}/мес</span>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate("product-form", { id: product.id })}>
-                        <Pencil className="h-3 w-3" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(product.id)}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between mb-1">
+                        <div>
+                          <Badge variant="outline" className="text-xs mb-1">{product.network}</Badge>
+                          <p className="font-medium text-sm">{product.brand}</p>
+                        </div>
+                        {product.isActive ? (
+                          <Badge className="text-xs bg-green-100 text-green-700">Активен</Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-xs">Неактивен</Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-2 truncate">{product.nomenclature}</p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">План: {product.monthlyPlanQty}/мес</span>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate("product-form", { id: product.id })}>
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(product.id)}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </CardContent>

@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { ValidationErrors, FieldError } from "@/components/shared/ValidationErrors";
 import { LoadingState } from "@/components/shared/LoadingState";
-import { ArrowLeft, Save, Upload } from "lucide-react";
+import { ArrowLeft, Save, Upload, Download, Loader2, Image as ImageIcon, X } from "lucide-react";
 
 interface ProductData {
   id: number;
@@ -31,6 +31,11 @@ interface NetworkData {
   createdAt: string;
 }
 
+interface ScrapeResult {
+  title: string;
+  imageUrl: string;
+}
+
 export function ProductFormPage() {
   const { routeParams, navigate } = useRouterContext();
   const isEditing = !!routeParams.id;
@@ -47,6 +52,7 @@ export function ProductFormPage() {
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [scraping, setScraping] = useState(false);
   const [networks, setNetworks] = useState<NetworkData[]>([]);
 
   useEffect(() => {
@@ -74,6 +80,41 @@ export function ProductFormPage() {
     fetchData();
   }, [isEditing, editId]);
 
+  const handleScrapeProduct = async () => {
+    if (!link.trim()) {
+      setErrors(prev => ({ ...prev, link: "Введите ссылку для автозаполнения" }));
+      return;
+    }
+
+    setScraping(true);
+    setErrors(prev => {
+      const { link: _, ...rest } = prev;
+      return rest;
+    });
+
+    try {
+      const result = await apiFetch<ScrapeResult>("/api/scrape-product", {
+        method: "POST",
+        body: JSON.stringify({ url: link.trim() }),
+      });
+
+      if (result.title && !nomenclature.trim()) {
+        setNomenclature(result.title);
+      }
+      if (result.imageUrl) {
+        setThumbnailPath(result.imageUrl);
+      }
+      if (!result.title && !result.imageUrl) {
+        setErrors(prev => ({ ...prev, scrape: "Не удалось получить данные со страницы" }));
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Ошибка загрузки данных";
+      setErrors(prev => ({ ...prev, scrape: msg }));
+    } finally {
+      setScraping(false);
+    }
+  };
+
   const handleThumbnailUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -99,7 +140,6 @@ export function ProductFormPage() {
     if (!network) newErrors.network = "Выберите сеть";
     if (!brand.trim()) newErrors.brand = "Введите бренд";
     if (!nomenclature.trim()) newErrors.nomenclature = "Введите номенклатуру";
-    if (!link.trim()) newErrors.link = "Введите ссылку";
     if (!monthlyPlanQty || Number(monthlyPlanQty) <= 0) newErrors.monthlyPlanQty = "Введите план";
 
     setErrors(newErrors);
@@ -111,7 +151,7 @@ export function ProductFormPage() {
         network,
         brand: brand.trim(),
         nomenclature: nomenclature.trim(),
-        link: link.trim(),
+        link: link.trim() || null,
         monthlyPlanQty: Number(monthlyPlanQty),
         isActive,
         thumbnailPath,
@@ -136,6 +176,8 @@ export function ProductFormPage() {
       setLoading(false);
     }
   };
+
+  const isExternalImage = thumbnailPath && thumbnailPath.startsWith("http");
 
   if (pageLoading) {
     return <LoadingState type="form" count={6} />;
@@ -184,21 +226,82 @@ export function ProductFormPage() {
 
             <div className="space-y-2">
               <Label htmlFor="link">Ссылка на товар</Label>
-              <Input id="link" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://..." />
-              <FieldError message={errors.link} />
+              <div className="flex gap-2">
+                <Input
+                  id="link"
+                  value={link}
+                  onChange={(e) => setLink(e.target.value)}
+                  placeholder="https://magnit.ru/product/..."
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleScrapeProduct}
+                  disabled={scraping || !link.trim()}
+                  className="shrink-0"
+                >
+                  {scraping ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                  <span className="ml-1.5 hidden sm:inline">
+                    {scraping ? "Загрузка..." : "Заполнить"}
+                  </span>
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Вставьте ссылку и нажмите «Заполнить» — название и фото подтянутся автоматически
+              </p>
+              <FieldError message={errors.link || errors.scrape} />
             </div>
 
             <div className="space-y-2">
-              <Label>Скрин товара</Label>
+              <Label>Фото товара</Label>
               {thumbnailPath ? (
-                <div className="relative">
-                  <img src={thumbnailPath} alt="Thumbnail" className="w-24 h-24 object-cover rounded border" />
-                  <Button type="button" variant="ghost" size="sm" className="mt-1 text-xs" onClick={() => setThumbnailPath(null)}>Удалить</Button>
+                <div className="relative inline-block">
+                  <div className="w-24 h-24 rounded-lg border overflow-hidden bg-muted">
+                    <img
+                      src={thumbnailPath}
+                      alt="Thumbnail"
+                      className="w-full h-full object-cover"
+                      crossOrigin={isExternalImage ? "anonymous" : undefined}
+                      referrerPolicy={isExternalImage ? "no-referrer" : undefined}
+                      onError={(e) => {
+                        // If external image fails to load, try with no-referrer
+                        const img = e.currentTarget;
+                        if (!img.dataset.retried) {
+                          img.dataset.retried = "1";
+                          img.src = thumbnailPath;
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-center gap-1 mt-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs h-6 text-destructive"
+                      onClick={() => setThumbnailPath(null)}
+                    >
+                      <X className="h-3 w-3 mr-0.5" />
+                      Удалить
+                    </Button>
+                  </div>
+                  {isExternalImage && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Изображение с внешнего сайта
+                    </p>
+                  )}
                 </div>
               ) : (
                 <label className="border-2 border-dashed rounded-lg p-4 text-center hover:border-primary/50 transition-colors cursor-pointer block">
                   <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
-                  <p className="text-xs text-muted-foreground">{uploading ? "Загрузка..." : "Загрузите изображение товара"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {uploading ? "Загрузка..." : "Загрузите фото или получите автоматически по ссылке"}
+                  </p>
                   <input type="file" className="hidden" accept="image/*" onChange={handleThumbnailUpload} disabled={uploading} />
                 </label>
               )}

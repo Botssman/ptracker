@@ -205,9 +205,14 @@ export function GroupDetailPage() {
                   <CardContent className="p-4">
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                       {/* Product thumbnail */}
-                      <div className="w-12 h-12 rounded bg-muted flex items-center justify-center shrink-0">
+                      <div className="w-12 h-12 rounded bg-muted flex items-center justify-center shrink-0 overflow-hidden">
                         {item.product.thumbnailPath ? (
-                          <img src={item.product.thumbnailPath} alt="" className="w-full h-full object-cover rounded" />
+                          <img
+                            src={item.product.thumbnailPath}
+                            alt=""
+                            className="w-full h-full object-cover rounded"
+                            referrerPolicy={item.product.thumbnailPath.startsWith("http") ? "no-referrer" : undefined}
+                          />
                         ) : (
                           <ImageIcon className="h-5 w-5 text-muted-foreground" />
                         )}
