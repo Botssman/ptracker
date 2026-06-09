@@ -83,8 +83,22 @@ export async function DELETE(
     }
 
     const { id } = await params;
+    const productId = Number(id);
+
+    // Check if product is used in any groups
+    const groupItemCount = await db.purchaseGroupItem.count({
+      where: { productId },
+    });
+
+    if (groupItemCount > 0) {
+      return NextResponse.json(
+        { error: `Нельзя удалить товар: он добавлен в ${groupItemCount} группу(групп). Сначала удалите его из всех групп.` },
+        { status: 409 }
+      );
+    }
+
     await db.product.delete({
-      where: { id: Number(id) },
+      where: { id: productId },
     });
 
     return NextResponse.json({ success: true });

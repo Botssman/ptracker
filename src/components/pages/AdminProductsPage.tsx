@@ -63,7 +63,8 @@ export function AdminProductsPage() {
       await apiFetch(`/api/products/${id}`, { method: "DELETE" });
       setProducts(prev => prev.filter(p => p.id !== id));
     } catch (err) {
-      console.error("Failed to delete product:", err);
+      const msg = err instanceof Error ? err.message : "Не удалось удалить товар";
+      alert(msg);
     }
   };
 
