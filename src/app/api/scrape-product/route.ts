@@ -5,7 +5,7 @@ import { authOptions } from "@/lib/auth";
 export const dynamic = 'force-dynamic';
 
 // ============================
-// Utility functions
+// Вспомогательные функции
 // ============================
 
 function decodeHtmlEntities(text: string): string {
@@ -32,6 +32,7 @@ function makeAbsoluteUrl(imageUrl: string, pageUrl: string): string {
 
 function cleanTitle(raw: string): string {
   let title = raw
+    // Убираем типичные суффиксы магазинов
     .replace(/\s*[—––]\s*купить.*$/i, "")
     .replace(/\s*—\s*Магнит\s*$/i, "")
     .replace(/\s*—\s*Лента\s*$/i, "")
@@ -40,11 +41,13 @@ function cleanTitle(raw: string): string {
     .replace(/\s*\|\s*Пятёрочка\s*$/i, "")
     .trim();
 
+  // Убираем часть после | если до неё достаточно текста
   const pipeMatch = title.match(/^(.+?)\s*\|\s*.+$/);
   if (pipeMatch && pipeMatch[1].trim().length > 5) {
     title = pipeMatch[1].trim();
   }
 
+  // Убираем часть после — если до неё достаточно текста
   const dashMatch = title.match(/^(.+?)\s*[—––]\s*.+$/);
   if (dashMatch && dashMatch[1].trim().length > 5) {
     title = dashMatch[1].trim();
@@ -53,6 +56,7 @@ function cleanTitle(raw: string): string {
   return title;
 }
 
+// Проверяем что URL похож на картинку товара, а не лого/иконку
 function isProductImage(url: string): boolean {
   if (!url) return false;
   const lower = url.toLowerCase();
@@ -67,19 +71,19 @@ function isProductImage(url: string): boolean {
 }
 
 // ============================
-// HTML extraction
+// Извлечение данных из HTML
 // ============================
 
 function extractTitle(html: string): string {
   let title = "";
 
-  // 1. <h1> — best source for product name
+  // 1. <h1> — лучший источник названия товара
   const h1Match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
   if (h1Match) {
     title = h1Match[1].replace(/<[^>]*>/g, "").trim();
   }
 
-  // 2. Schema.org JSON-LD Product
+  // 2. Schema.org JSON-LD — структурированные данные товара
   if (!title) {
     const jsonLdMatches = html.matchAll(
       /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
@@ -95,11 +99,11 @@ function extractTitle(html: string): string {
           }
         }
         if (title) break;
-      } catch { /* ignore */ }
+      } catch { /* игнорируем ошибки парсинга */ }
     }
   }
 
-  // 3. og:title
+  // 3. og:title — мета-тег Open Graph
   if (!title) {
     const ogTitleMatch = html.match(
       /<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i
@@ -107,7 +111,7 @@ function extractTitle(html: string): string {
     if (ogTitleMatch) title = ogTitleMatch[1];
   }
 
-  // 4. <title> with cleanup
+  // 4. <title> с очисткой от мусора
   if (!title) {
     const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
     if (titleMatch) {
@@ -121,17 +125,17 @@ function extractTitle(html: string): string {
 function extractImage(html: string, pageUrl: string): string {
   let imageUrl = "";
 
-  // 1. All <img> src attributes, filtered for product images
+  // 1. Все <img> с фильтрацией на картинки товаров
   const allImgSrcs = [...html.matchAll(/<img[^>]+src="([^"]+)"/gi)]
     .map(m => m[1])
     .filter(isProductImage);
 
-  // 2. Prefer CDN / product images
+  // 2. Предпочитаем картинки с CDN / товаров
   const cdnImages = allImgSrcs.filter(src =>
     /images-foodtech|catalog|product|img-dostavka|cdn.*product|cloudinary.*product|lenta\.com|static\.|media\./i.test(src)
   );
 
-  // Pick a large one if possible
+  // Выбираем большую картинку если есть
   const largeImage = cdnImages.find(src =>
     /\d{3,4}x\d{3,4}|rs:fit:\d{3,4}|w_\d{3,4}|width.*\d{3,4}|\d{3,4}_\d{3,4}/i.test(src)
   ) || cdnImages[0];
@@ -139,14 +143,14 @@ function extractImage(html: string, pageUrl: string): string {
   if (largeImage) {
     imageUrl = largeImage;
   } else if (allImgSrcs.length > 0) {
-    // Fallback: any large image
+    // Запасной вариант: любая большая картинка
     const largeFallback = allImgSrcs.find(src =>
       /\d{3,4}x\d{3,4}|rs:fit:\d{3,4}|w_\d{3,4}|\/large\/|\/big\/|\/full\//i.test(src)
     );
     imageUrl = largeFallback || allImgSrcs[0];
   }
 
-  // 3. Schema.org JSON-LD Product image
+  // 3. Schema.org JSON-LD — картинка товара из структурированных данных
   if (!imageUrl) {
     const jsonLdMatches = html.matchAll(
       /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
@@ -164,11 +168,11 @@ function extractImage(html: string, pageUrl: string): string {
           }
         }
         if (imageUrl) break;
-      } catch { /* ignore */ }
+      } catch { /* игнорируем ошибки парсинга */ }
     }
   }
 
-  // 4. og:image
+  // 4. og:image — мета-тег Open Graph
   if (!imageUrl) {
     const ogImageMatch = html.match(
       /<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i
@@ -182,7 +186,7 @@ function extractImage(html: string, pageUrl: string): string {
 }
 
 // ============================
-// Main handler: simple direct fetch
+// Основной обработчик: простой прямой запрос
 // ============================
 
 export async function POST(request: NextRequest) {
@@ -199,7 +203,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Неверный URL" }, { status: 400 });
     }
 
-    console.log(`[scrape-product] Fetching: ${url}`);
+    console.log(`[scrape-product] Запрос: ${url}`);
 
     const response = await fetch(url, {
       headers: {
@@ -213,7 +217,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!response.ok) {
-      console.log(`[scrape-product] HTTP ${response.status} for ${url}`);
+      console.log(`[scrape-product] HTTP ${response.status} для ${url}`);
       return NextResponse.json({
         title: "",
         imageUrl: "",
@@ -226,7 +230,7 @@ export async function POST(request: NextRequest) {
     const title = extractTitle(html);
     const imageUrl = extractImage(html, url);
 
-    console.log(`[scrape-product] Result: title="${title}", image=${imageUrl ? "found" : "missing"}`);
+    console.log(`[scrape-product] Результат: название="${title}", картинка=${imageUrl ? "найдена" : "нет"}`);
 
     return NextResponse.json({
       title: title || "",
@@ -234,7 +238,7 @@ export async function POST(request: NextRequest) {
       method: "direct-fetch",
     });
   } catch (error) {
-    console.error("[scrape-product] Error:", error);
+    console.error("[scrape-product] Ошибка:", error);
     return NextResponse.json({
       title: "",
       imageUrl: "",
