@@ -5,6 +5,29 @@ import { authOptions } from "@/lib/auth";
 export const dynamic = 'force-dynamic';
 
 // ============================
+// Константы
+// ============================
+
+// URL Google Apps Script прокси (обходит Qrator)
+const GAS_PROXY_URL = "https://script.google.com/macros/s/AKfycbzSx-RNwBVxSPPI8cJWr9vw7EuBZupp-5rG1-8rbcXI2okdfFy5b1wvfbx9p-U8vlEdMQ/exec";
+
+// Заголовки для API Ленты
+const LENTA_API_BASE = "https://api.lenta.com/v1";
+const LENTA_HEADERS = {
+  "X-Retail-Brand": "lo",
+  "X-Platform": "web",
+  "DeviceID": "ptracker-svc-00000000-0000-0000-0000-000000000001",
+  "Accept": "application/json",
+};
+
+// Домены, защищённые Qrator (прямой запрос с сервера заблокирован)
+const QRATOR_DOMAINS = [
+  "lenta.com", "lentochka.lenta.com",
+  "perekrestok.ru", "5ka.ru", "auchan.ru",
+  "kuper.ru", "ozone.ru", "ozon.ru",
+];
+
+// ============================
 // Вспомогательные функции
 // ============================
 
@@ -70,6 +93,52 @@ function isProductImage(url: string): boolean {
 // Проверяем, заблокирован ли сайт (Qrator, ServicePipe и т.д.)
 function isBlockedHtml(html: string): boolean {
   return /qauth\.js|qrator|challenge-platform|servicepipe|__qrator/i.test(html);
+}
+
+// Проверяем, защищён ли домен Qrator-ом
+function isQratorProtected(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return QRATOR_DOMAINS.some(d => hostname === d || hostname.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+}
+
+// ============================
+// Google Apps Script прокси
+// ============================
+
+// Вызов URL через GAS прокси (без заголовков — для HTML-страниц)
+async function fetchViaGasProxy(targetUrl: string): Promise<string | null> {
+  try {
+    const proxyUrl = `${GAS_PROXY_URL}?url=${encodeURIComponent(targetUrl)}`;
+    const response = await fetch(proxyUrl, {
+      signal: AbortSignal.timeout(20000),
+      redirect: "follow",
+    });
+    if (!response.ok) return null;
+    return await response.text();
+  } catch (err) {
+    console.error("[gas-proxy] Ошибка:", err);
+    return null;
+  }
+}
+
+// Вызов API через GAS прокси с кастомными заголовками
+async function fetchApiViaGasProxy(apiUrl: string, headers: Record<string, string>): Promise<string | null> {
+  try {
+    const proxyUrl = `${GAS_PROXY_URL}?url=${encodeURIComponent(apiUrl)}&headers=${encodeURIComponent(JSON.stringify(headers))}`;
+    const response = await fetch(proxyUrl, {
+      signal: AbortSignal.timeout(20000),
+      redirect: "follow",
+    });
+    if (!response.ok) return null;
+    return await response.text();
+  } catch (err) {
+    console.error("[gas-proxy-api] Ошибка:", err);
+    return null;
+  }
 }
 
 // ============================
@@ -200,23 +269,95 @@ function extractImage(html: string, pageUrl: string): string {
 }
 
 // ============================
+// Специфичные парсеры магазинов
+// ============================
+
+// Извлекаем ID товара Ленты из URL
+// Примеры: /product/moloko-...-930g-2000320 или /item/2000320
+function extractLentaProductId(url: string): number | null {
+  try {
+    const urlObj = new URL(url);
+    const path = urlObj.pathname;
+
+    // Паттерн: /product/slug-name-{id} или /item/{id}
+    const idMatch = path.match(/-(\d{4,10})$/);
+    if (idMatch) return parseInt(idMatch[1], 10);
+
+    // Паттерн: /item/{id}
+    const itemMatch = path.match(/\/item\/(\d{4,10})/);
+    if (itemMatch) return parseInt(itemMatch[1], 10);
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Получаем данные товара Ленты через API
+async function fetchLentaProduct(productId: number): Promise<{ title: string; imageUrl: string } | null> {
+  const apiUrl = `${LENTA_API_BASE}/catalog/items/${productId}`;
+  console.log(`[lenta-api] Запрос: ${apiUrl}`);
+
+  const jsonStr = await fetchApiViaGasProxy(apiUrl, LENTA_HEADERS);
+  if (!jsonStr) {
+    console.log(`[lenta-api] Не удалось получить ответ от API`);
+    return null;
+  }
+
+  try {
+    const data = JSON.parse(jsonStr);
+
+    // Проверяем на ошибку API
+    if (data.code && data.code !== "OK" && data.code !== 200) {
+      console.log(`[lenta-api] API вернул ошибку: ${data.code} - ${data.message}`);
+      return null;
+    }
+
+    const product = data.product || data;
+    const title = product.Name || product.name || product.title || "";
+    
+    // Картинка товара из API
+    let imageUrl = "";
+    if (product.MainImage?.Url) {
+      imageUrl = product.MainImage.Url;
+    } else if (product.Images && Array.isArray(product.Images) && product.Images.length > 0) {
+      const mainImg = product.Images.find((img: any) => img.IsMain) || product.Images[0];
+      imageUrl = mainImg.Url || mainImg.url || mainImg.src || "";
+    } else if (product.ImageUrl) {
+      imageUrl = product.ImageUrl;
+    } else if (product.image) {
+      imageUrl = typeof product.image === "string" ? product.image : product.image.url || "";
+    }
+
+    // Делаем URL картинки абсолютным
+    if (imageUrl && !imageUrl.startsWith("http")) {
+      imageUrl = `https://cdn.lentochka.lenta.com${imageUrl.startsWith("/") ? "" : "/"}${imageUrl}`;
+    }
+
+    console.log(`[lenta-api] Название: "${title}", Картинка: ${imageUrl ? "найдена" : "нет"}`);
+    return { title, imageUrl };
+  } catch (err) {
+    console.error(`[lenta-api] Ошибка парсинга JSON:`, err);
+    // Сохраняем первые 500 символов для отладки
+    console.log(`[lenta-api] Ответ API (первые 500 символов): ${jsonStr.substring(0, 500)}`);
+    return null;
+  }
+}
+
+// ============================
 // Фолбэк: поиск через DuckDuckGo
 // ============================
 
-// Извлекаем поисковый запрос из URL товара
 function urlToSearchQuery(pageUrl: string): string {
   try {
     const urlObj = new URL(pageUrl);
-    // Берём последний сегмент пути (slug товара)
     const slug = urlObj.pathname
       .split("/")
-      .filter(p => p && p !== "cat" && p !== "d" && p !== "product" && p !== "catalog" && p !== "p")
+      .filter(p => p && p !== "cat" && p !== "d" && p !== "product" && p !== "catalog" && p !== "p" && p !== "item")
       .pop() || "";
 
-    // Заменяем дефисы и подчёркивания на пробелы
     let query = slug.replace(/[-_]/g, " ").replace(/\d{6,}/g, "").replace(/\s+/g, " ").trim();
 
-    // Добавляем название магазина для контекста
     const store = urlObj.hostname.replace("www.", "").replace(".ru", "").replace(".com", "");
     if (query) {
       query = `${query} ${store}`;
@@ -228,7 +369,6 @@ function urlToSearchQuery(pageUrl: string): string {
   }
 }
 
-// Транслитерация для поиска на русском
 function transliterateToRussian(text: string): string {
   const map: Record<string, string> = {
     "moloko": "молоко", "mayonez": "майонез", "ketchyp": "кетчуп",
@@ -252,7 +392,6 @@ interface DDGResult {
   url: string;
 }
 
-// Поиск через DuckDuckGo HTML — возвращает список результатов
 async function searchDuckDuckGo(query: string): Promise<DDGResult[]> {
   try {
     const encodedQuery = encodeURIComponent(query);
@@ -272,18 +411,16 @@ async function searchDuckDuckGo(query: string): Promise<DDGResult[]> {
     const html = await response.text();
     const results: DDGResult[] = [];
 
-    // Парсим результаты DuckDuckGo
     const linkMatches = [...html.matchAll(/<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi)];
     for (const match of linkMatches) {
       let linkUrl = match[1];
       const linkTitle = match[2].replace(/<[^>]+>/g, "").trim();
 
-      // DuckDuckGo оборачивает ссылки через редирект
       const uddgMatch = linkUrl.match(/uddg=([^&]+)/);
       if (uddgMatch) {
         linkUrl = decodeURIComponent(uddgMatch[1]);
       } else if (linkUrl.startsWith("//duckduckgo.com/l/")) {
-        continue; // пропускаем внутренние ссылки DDG
+        continue;
       }
 
       if (linkTitle && linkUrl.startsWith("http")) {
@@ -323,46 +460,97 @@ export async function POST(request: NextRequest) {
     let method = "direct-fetch";
 
     // ==========================================
-    // Шаг 1: Прямой запрос (работает для Магнита)
+    // Шаг 1: Прямой запрос (работает для Магнита и других SSR-сайтов)
     // ==========================================
-    try {
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-        },
-        signal: AbortSignal.timeout(15000),
-      });
+    if (!isQratorProtected(url)) {
+      try {
+        const response = await fetch(url, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            Accept:
+              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+          },
+          signal: AbortSignal.timeout(15000),
+        });
 
-      if (response.ok) {
-        const html = await response.text();
+        if (response.ok) {
+          const html = await response.text();
 
-        // Проверяем что страница не заблокирована антибот-защитой
-        if (!isBlockedHtml(html)) {
-          title = extractTitle(html);
-          imageUrl = extractImage(html, url);
-          console.log(`[direct-fetch] название="${title}", картинка=${imageUrl ? "найдена" : "нет"}`);
+          if (!isBlockedHtml(html)) {
+            title = extractTitle(html);
+            imageUrl = extractImage(html, url);
+            console.log(`[direct-fetch] название="${title}", картинка=${imageUrl ? "найдена" : "нет"}`);
+          } else {
+            console.log(`[direct-fetch] Антибот-защита обнаружена`);
+          }
         } else {
-          console.log(`[direct-fetch] Антибот-защита обнаружена, переключаемся на поиск`);
+          console.log(`[direct-fetch] HTTP ${response.status}`);
         }
-      } else {
-        console.log(`[direct-fetch] HTTP ${response.status}`);
+      } catch (err) {
+        console.log(`[direct-fetch] Ошибка: ${err}`);
       }
-    } catch (err) {
-      console.log(`[direct-fetch] Ошибка: ${err}`);
+    } else {
+      console.log(`[scrape-product] Домен защищён Qrator, пропускаем прямой запрос`);
     }
 
     // ==========================================
-    // Шаг 2: Фолбэк через DuckDuckGo (для заблокированных сайтов)
+    // Шаг 2: Специфичный парсер для Ленты (через API + GAS прокси)
+    // ==========================================
+    if ((!title || !imageUrl) && url.includes("lenta.com")) {
+      method = "lenta-api";
+      console.log(`[lenta-api] Пробуем получить данные через API Ленты...`);
+
+      const productId = extractLentaProductId(url);
+      if (productId) {
+        const lentaData = await fetchLentaProduct(productId);
+        if (lentaData) {
+          if (!title) title = lentaData.title;
+          if (!imageUrl) imageUrl = lentaData.imageUrl;
+        }
+      } else {
+        console.log(`[lenta-api] Не удалось извлечь ID товара из URL`);
+      }
+
+      // Если API не отдал картинку, пробуем через прокси получить HTML страницы
+      if (!imageUrl) {
+        console.log(`[lenta-api] Пробуем получить картинку через HTML-прокси...`);
+        const html = await fetchViaGasProxy(url);
+        if (html) {
+          imageUrl = extractImage(html, url);
+          if (!title) title = extractTitle(html);
+          console.log(`[lenta-proxy] картинка=${imageUrl ? "найдена" : "нет"}`);
+        }
+      }
+    }
+
+    // ==========================================
+    // Шаг 3: GAS прокси для других Qrator-защищённых сайтов
+    // ==========================================
+    if ((!title || !imageUrl) && isQratorProtected(url) && !url.includes("lenta.com")) {
+      method = "gas-proxy";
+      console.log(`[gas-proxy] Пробуем получить страницу через прокси...`);
+
+      const html = await fetchViaGasProxy(url);
+      if (html) {
+        if (!isBlockedHtml(html)) {
+          if (!title) title = extractTitle(html);
+          if (!imageUrl) imageUrl = extractImage(html, url);
+          console.log(`[gas-proxy] название="${title}", картинка=${imageUrl ? "найдена" : "нет"}`);
+        } else {
+          console.log(`[gas-proxy] Прокси тоже заблокирован`);
+        }
+      }
+    }
+
+    // ==========================================
+    // Шаг 4: Фолбэк через DuckDuckGo (последняя надежда)
     // ==========================================
     if (!title || !imageUrl) {
       method = "ddg-search";
       console.log(`[ddg-search] Ищем через DuckDuckGo...`);
 
-      // Формируем поисковый запрос из URL
       let searchQuery = urlToSearchQuery(url);
       searchQuery = transliterateToRussian(searchQuery);
 
@@ -372,9 +560,7 @@ export async function POST(request: NextRequest) {
         console.log(`[ddg-search] Запрос: "${searchQuery}"`);
         const results = await searchDuckDuckGo(searchQuery);
 
-        // Берём название из первого подходящего результата
         if (!title && results.length > 0) {
-          // Ищем результат, который выглядит как товар (а не категория/статья)
           const productResult = results.find(r =>
             !/каталог|доставк|купить с|цена|отзывы|рецепт/i.test(r.title)
           ) || results[0];
@@ -382,9 +568,7 @@ export async function POST(request: NextRequest) {
           console.log(`[ddg-search] Название: "${title}"`);
         }
 
-        // Пробуем достать картинку с доступного сайта из результатов
         if (!imageUrl && results.length > 0) {
-          // Приоритет: магнит (проверенный), потом другие
           const magnitResult = results.find(r => r.url.includes("magnit.ru"));
           const otherResult = results.find(r =>
             !r.url.includes("lenta.com") &&
