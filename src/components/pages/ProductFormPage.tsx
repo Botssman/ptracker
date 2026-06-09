@@ -34,6 +34,7 @@ interface NetworkData {
 interface ScrapeResult {
   title: string;
   imageUrl: string;
+  method?: string;
 }
 
 export function ProductFormPage() {
