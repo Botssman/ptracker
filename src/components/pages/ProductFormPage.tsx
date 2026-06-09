@@ -34,6 +34,7 @@ interface NetworkData {
 interface ScrapeResult {
   title: string;
   imageUrl: string;
+  brand?: string;
   method?: string;
 }
 
@@ -102,10 +103,13 @@ export function ProductFormPage() {
       if (result.title && !nomenclature.trim()) {
         setNomenclature(result.title);
       }
+      if (result.brand && !brand.trim()) {
+        setBrand(result.brand);
+      }
       if (result.imageUrl) {
         setThumbnailPath(result.imageUrl);
       }
-      if (!result.title && !result.imageUrl) {
+      if (!result.title && !result.imageUrl && !result.brand) {
         setErrors(prev => ({ ...prev, scrape: "Не удалось получить данные со страницы" }));
       }
     } catch (err) {
@@ -253,7 +257,7 @@ export function ProductFormPage() {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Вставьте ссылку и нажмите «Заполнить» — название и фото подтянутся автоматически
+                Вставьте ссылку и нажмите «Заполнить» — название, бренд и фото подтянутся автоматически
               </p>
               <FieldError message={errors.link || errors.scrape} />
             </div>

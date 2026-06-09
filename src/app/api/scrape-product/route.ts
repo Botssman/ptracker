@@ -193,6 +193,58 @@ function extractTitle(html: string): string {
   return decodeHtmlEntities(title);
 }
 
+function extractBrand(html: string): string {
+  // 1. Schema.org JSON-LD
+  const jsonLdMatches = html.matchAll(
+    /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+  );
+  for (const match of jsonLdMatches) {
+    try {
+      const schema = JSON.parse(match[1]);
+      const items = Array.isArray(schema) ? schema : [schema];
+      for (const item of items) {
+        if (item["@type"] === "Product" || item["@type"] === "IndividualProduct") {
+          if (item.brand) {
+            if (typeof item.brand === "string") return item.brand.trim();
+            if (item.brand.name) return item.brand.name.trim();
+          }
+          if (item.manufacturer) {
+            if (typeof item.manufacturer === "string") return item.manufacturer.trim();
+            if (item.manufacturer.name) return item.manufacturer.name.trim();
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  // 2. Meta tags
+  const metaPatterns = [
+    /<meta[^>]*property=["']og:brand["'][^>]*content=["']([^"']+)["']/i,
+    /<meta[^>]*property=["']product:brand["'][^>]*content=["']([^"']+)["']/i,
+    /<meta[^>]*name=["']brand["'][^>]*content=["']([^"']+)["']/i,
+  ];
+  for (const pattern of metaPatterns) {
+    const match = html.match(pattern);
+    if (match) return decodeHtmlEntities(match[1].trim());
+  }
+
+  // 3. HTML elements
+  const brandPatterns = [
+    /class=["'][^"']*brand[^"']*"[^>]*>([\s\S]*?)<\/[^>]+>/i,
+    /class=["'][^"']*vendor[^"']*"[^>]*>([\s\S]*?)<\/[^>]+>/i,
+    /data-brand=["']([^"']+)["']/i,
+  ];
+  for (const pattern of brandPatterns) {
+    const match = html.match(pattern);
+    if (match) {
+      const text = match[1].replace(/<[^>]*>/g, "").trim();
+      if (text && text.length > 0 && text.length < 100) return decodeHtmlEntities(text);
+    }
+  }
+
+  return "";
+}
+
 function extractImage(html: string, pageUrl: string): string {
   let imageUrl = "";
 
@@ -327,7 +379,7 @@ function extractLentaTitleFromSlug(url: string): string {
 }
 
 // Получаем данные товара Ленты через API
-async function fetchLentaProduct(productId: number): Promise<{ title: string; imageUrl: string } | null> {
+async function fetchLentaProduct(productId: number): Promise<{ title: string; imageUrl: string; brand: string } | null> {
   const apiUrl = `${LENTA_API_BASE}/catalog/items/${productId}`;
   console.log(`[lenta-api] Запрос: ${apiUrl}`);
 
@@ -367,8 +419,11 @@ async function fetchLentaProduct(productId: number): Promise<{ title: string; im
       imageUrl = `https://cdn.lentochka.lenta.com${imageUrl.startsWith("/") ? "" : "/"}${imageUrl}`;
     }
 
-    console.log(`[lenta-api] Название: "${title}", Картинка: ${imageUrl ? "найдена" : "нет"}`);
-    return { title, imageUrl };
+    // Бренд из API
+    const brand = product.Brand || product.brand || product.Vendor || product.vendor || "";
+
+    console.log(`[lenta-api] Название: "${title}", Картинка: ${imageUrl ? "найдена" : "нет"}, Бренд: "${brand || "нет"}"`);
+    return { title, imageUrl, brand };
   } catch (err) {
     console.error(`[lenta-api] Ошибка парсинга JSON:`, err);
     // Сохраняем первые 500 символов для отладки
@@ -490,6 +545,7 @@ export async function POST(request: NextRequest) {
 
     let title = "";
     let imageUrl = "";
+    let brand = "";
     let method = "direct-fetch";
 
     // ==========================================
@@ -514,7 +570,8 @@ export async function POST(request: NextRequest) {
           if (!isBlockedHtml(html)) {
             title = extractTitle(html);
             imageUrl = extractImage(html, url);
-            console.log(`[direct-fetch] название="${title}", картинка=${imageUrl ? "найдена" : "нет"}`);
+            brand = extractBrand(html);
+            console.log(`[direct-fetch] название="${title}", картинка=${imageUrl ? "найдена" : "нет"}, бренд="${brand || "нет"}"`);
           } else {
             console.log(`[direct-fetch] Антибот-защита обнаружена`);
           }
@@ -549,19 +606,21 @@ export async function POST(request: NextRequest) {
           // API название предпочтительнее, если получено
           if (lentaData.title) title = lentaData.title;
           if (!imageUrl) imageUrl = lentaData.imageUrl;
+          if (lentaData.brand) brand = lentaData.brand;
         }
       } else {
         console.log(`[lenta-api] Не удалось извлечь ID товара из URL`);
       }
 
-      // Если API не отдал картинку, пробуем через прокси получить HTML страницы
-      if (!imageUrl) {
-        console.log(`[lenta-api] Пробуем получить картинку через HTML-прокси...`);
+      // Если API не отдал картинку или бренд, пробуем через прокси получить HTML страницы
+      if (!imageUrl || !brand) {
+        console.log(`[lenta-api] Пробуем получить данные через HTML-прокси...`);
         const html = await fetchViaGasProxy(url);
         if (html && !isBlockedHtml(html)) {
-          imageUrl = extractImage(html, url);
+          if (!imageUrl) imageUrl = extractImage(html, url);
           if (!title) title = extractTitle(html);
-          console.log(`[lenta-proxy] картинка=${imageUrl ? "найдена" : "нет"}`);
+          if (!brand) brand = extractBrand(html);
+          console.log(`[lenta-proxy] картинка=${imageUrl ? "найдена" : "нет"}, бренд="${brand || "нет"}"`);
         }
       }
     }
@@ -578,7 +637,8 @@ export async function POST(request: NextRequest) {
         if (!isBlockedHtml(html)) {
           if (!title) title = extractTitle(html);
           if (!imageUrl) imageUrl = extractImage(html, url);
-          console.log(`[gas-proxy] название="${title}", картинка=${imageUrl ? "найдена" : "нет"}`);
+          if (!brand) brand = extractBrand(html);
+          console.log(`[gas-proxy] название="${title}", картинка=${imageUrl ? "найдена" : "нет"}, бренд="${brand || "нет"}"`);
         } else {
           console.log(`[gas-proxy] Прокси тоже заблокирован`);
         }
@@ -607,6 +667,15 @@ export async function POST(request: NextRequest) {
           ) || results[0];
           title = cleanTitle(productResult.title);
           console.log(`[ddg-search] Название: "${title}"`);
+
+          // Пробуем извлечь бренд из сниппета DuckDuckGo
+          if (!brand) {
+            const snippet = (productResult as any).snippet || "";
+            const brandFromSnippet = snippet.match(/(?:бренд|марка|производитель|brand)\s*[:=–—]?\s*([A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё\s]{1,30})/i);
+            if (brandFromSnippet) {
+              brand = brandFromSnippet[1].trim();
+            }
+          }
         }
 
         if (!imageUrl && results.length > 0) {
@@ -638,6 +707,7 @@ export async function POST(request: NextRequest) {
                 const imgHtml = await imgResponse.text();
                 if (!isBlockedHtml(imgHtml)) {
                   imageUrl = extractImage(imgHtml, tryUrl);
+                  if (!brand) brand = extractBrand(imgHtml);
                   if (imageUrl) {
                     console.log(`[ddg-search] Картинка найдена!`);
                     break;
@@ -652,11 +722,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`[scrape-product] Итог: метод=${method}, название="${title}", картинка=${imageUrl ? "найдена" : "нет"}`);
+    console.log(`[scrape-product] Итог: метод=${method}, название="${title}", картинка=${imageUrl ? "найдена" : "нет"}, бренд="${brand || "нет"}"`);
 
     return NextResponse.json({
       title: title || "",
       imageUrl: imageUrl || "",
+      brand: brand || "",
       method,
     });
   } catch (error) {
@@ -664,6 +735,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       title: "",
       imageUrl: "",
+      brand: "",
       method: "direct-fetch",
     });
   }
