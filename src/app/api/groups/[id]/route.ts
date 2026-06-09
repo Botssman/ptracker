@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import fs from "fs";
+import path from "path";
 
 export const dynamic = 'force-dynamic';
 
@@ -92,9 +94,36 @@ export async function DELETE(
     }
 
     const { id } = await params;
-    await db.purchaseGroup.delete({
-      where: { id: Number(id) },
+    const groupId = Number(id);
+
+    // Check group exists
+    const group = await db.purchaseGroup.findUnique({
+      where: { id: groupId },
+      include: {
+        receipts: true,
+      },
     });
+
+    if (!group) {
+      return NextResponse.json({ error: "Группа не найдена" }, { status: 404 });
+    }
+
+    // Delete receipt files from disk
+    for (const receipt of group.receipts) {
+      try {
+        const fullPath = path.join(process.cwd(), "public", receipt.filePath);
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath);
+        }
+      } catch {
+        // Ignore file deletion errors
+      }
+    }
+
+    // Cascade delete: receipts → items → group
+    await db.receipt.deleteMany({ where: { groupId } });
+    await db.purchaseGroupItem.deleteMany({ where: { groupId } });
+    await db.purchaseGroup.delete({ where: { id: groupId } });
 
     return NextResponse.json({ success: true });
   } catch (error) {

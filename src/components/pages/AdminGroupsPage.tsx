@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Progress } from "@/components/ui/progress";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState } from "@/components/shared/LoadingState";
-import { Plus, Eye, Pencil, FolderOpen } from "lucide-react";
+import { Plus, Eye, Pencil, Trash2, FolderOpen } from "lucide-react";
 
 interface UserData {
   id: number;
@@ -70,6 +70,17 @@ export function AdminGroupsPage() {
     }
     fetchData();
   }, []);
+
+  const handleDelete = async (id: number) => {
+    if (!confirm("Удалить группу и все связанные данные (товары, чеки)?")) return;
+    try {
+      await apiFetch(`/api/groups/${id}`, { method: "DELETE" });
+      setGroups(prev => prev.filter(g => g.id !== id));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Не удалось удалить группу";
+      alert(msg);
+    }
+  };
 
   if (loading) {
     return (
@@ -199,6 +210,9 @@ export function AdminGroupsPage() {
                           <Button variant="ghost" size="icon" onClick={() => navigate("group-form", { id: group.id })}>
                             <Pencil className="h-4 w-4" />
                           </Button>
+                          <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDelete(group.id)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -236,7 +250,11 @@ export function AdminGroupsPage() {
                       </Button>
                       <Button variant="outline" size="sm" className="text-xs" onClick={() => navigate("group-form", { id: group.id })}>
                         <Pencil className="h-3 w-3 mr-1" />
-                        Редактировать
+                        Изменить
+                      </Button>
+                      <Button variant="outline" size="sm" className="text-xs text-destructive hover:text-destructive" onClick={() => handleDelete(group.id)}>
+                        <Trash2 className="h-3 w-3 mr-1" />
+                        Удалить
                       </Button>
                     </div>
                   </CardContent>
