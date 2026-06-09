@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 // ============================
 
 // URL Google Apps Script прокси (обходит Qrator)
-const GAS_PROXY_URL = "https://script.google.com/macros/s/AKfycbzSx-RNwBVxSPPI8cJWr9vw7EuBZupp-5rG1-8rbcXI2okdfFy5b1wvfbx9p-U8vlEdMQ/exec";
+const GAS_PROXY_URL = "https://script.google.com/macros/s/AKfycbwBWql-eCn5EaDV2Ew1iix3BOKPTkNSot4emaO9vi39scpoFSJ_2xL8zUBrgD58n1iuaA/exec";
 
 // Заголовки для API Ленты
 const LENTA_API_BASE = "https://api.lenta.com/v1";
@@ -293,6 +293,39 @@ function extractLentaProductId(url: string): number | null {
   }
 }
 
+// Извлекаем название товара Ленты из URL slug
+// /product/moloko-pasterizovannoe-prostokvashino-3-2-930g-2000320
+// → "Молоко пастеризованное Простоквашино 3.2% 930г"
+function extractLentaTitleFromSlug(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    const path = urlObj.pathname;
+
+    // Берём последний сегмент пути (slug товара)
+    const slug = path.split("/").filter(p => p && p !== "product" && p !== "item").pop() || "";
+    if (!slug) return "";
+
+    // Разбиваем slug на части, убираем ID в конце
+    const parts = slug.replace(/-\d{4,10}$/, "").split("-");
+
+    // Транслитерация каждой части
+    const russianParts = parts.map(part => {
+      const lower = part.toLowerCase();
+      return SLUG_TO_RUSSIAN[lower] || part;
+    });
+
+    let title = russianParts.join(" ");
+
+    // Форматируем проценты и вес
+    title = title.replace(/(\d)[,.](\d)/g, "$1.$2"); // 3,2 → 3.2
+    title = title.replace(/(\d+\.?\d*)\s*%/g, "$1%"); // 3.2 % → 3.2%
+
+    return title.trim();
+  } catch {
+    return "";
+  }
+}
+
 // Получаем данные товара Ленты через API
 async function fetchLentaProduct(productId: number): Promise<{ title: string; imageUrl: string } | null> {
   const apiUrl = `${LENTA_API_BASE}/catalog/items/${productId}`;
@@ -502,11 +535,19 @@ export async function POST(request: NextRequest) {
       method = "lenta-api";
       console.log(`[lenta-api] Пробуем получить данные через API Ленты...`);
 
+      // Сначала пробуем название из URL slug (надёжный источник для Ленты)
+      if (!title) {
+        title = extractLentaTitleFromSlug(url);
+        if (title) console.log(`[lenta-slug] Название из URL: "${title}"`);
+      }
+
+      // Пробуем API через GAS прокси с SSR-токеном
       const productId = extractLentaProductId(url);
       if (productId) {
         const lentaData = await fetchLentaProduct(productId);
         if (lentaData) {
-          if (!title) title = lentaData.title;
+          // API название предпочтительнее, если получено
+          if (lentaData.title) title = lentaData.title;
           if (!imageUrl) imageUrl = lentaData.imageUrl;
         }
       } else {
@@ -517,7 +558,7 @@ export async function POST(request: NextRequest) {
       if (!imageUrl) {
         console.log(`[lenta-api] Пробуем получить картинку через HTML-прокси...`);
         const html = await fetchViaGasProxy(url);
-        if (html) {
+        if (html && !isBlockedHtml(html)) {
           imageUrl = extractImage(html, url);
           if (!title) title = extractTitle(html);
           console.log(`[lenta-proxy] картинка=${imageUrl ? "найдена" : "нет"}`);
