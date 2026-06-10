@@ -72,6 +72,7 @@ jobs:
           systemctl daemon-reload
 
           # Устанавливаем зависимости и генерируем Prisma
+          export PATH="/root/.bun/bin:$PATH"
           bun install
           bun prisma generate
           bun prisma db push --skip-generate
