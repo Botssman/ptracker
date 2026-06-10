@@ -198,6 +198,7 @@ export function GroupFormPage() {
             period: period.trim(),
             status,
             discountCardPath,
+            items: addedItems.map(i => ({ productId: i.productId, assignedQty: i.qty })),
           }),
         });
       } else {

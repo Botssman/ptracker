@@ -57,10 +57,12 @@ export async function PUT(
     }
 
     const { id } = await params;
+    const groupId = Number(id);
     const body = await request.json();
 
+    // Update group fields
     const group = await db.purchaseGroup.update({
-      where: { id: Number(id) },
+      where: { id: groupId },
       data: {
         ...(body.userId !== undefined && { userId: Number(body.userId) }),
         ...(body.network !== undefined && { network: body.network }),
@@ -71,6 +73,20 @@ export async function PUT(
         ...(body.discountCardPath !== undefined && { discountCardPath: body.discountCardPath }),
       },
     });
+
+    // Sync items if provided: delete old, create new
+    if (body.items !== undefined) {
+      await db.purchaseGroupItem.deleteMany({ where: { groupId } });
+      if (Array.isArray(body.items) && body.items.length > 0) {
+        await db.purchaseGroupItem.createMany({
+          data: body.items.map((item: { productId: number; assignedQty: number }) => ({
+            groupId,
+            productId: Number(item.productId),
+            assignedQty: item.assignedQty || 1,
+          })),
+        });
+      }
+    }
 
     return NextResponse.json(group);
   } catch (error) {
