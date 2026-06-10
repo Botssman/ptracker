@@ -51,6 +51,9 @@ jobs:
           bun install --production
           bun prisma generate
           bun prisma db push --skip-generate
+          mkdir -p .next/standalone/node_modules
+          cp -r node_modules/.prisma .next/standalone/node_modules/
+          cp -r node_modules/@prisma .next/standalone/node_modules/
           systemctl restart ptracker
           echo "✅ Деплой завершён!"
           DEPLOY
