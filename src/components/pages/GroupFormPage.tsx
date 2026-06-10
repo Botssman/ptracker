@@ -76,7 +76,6 @@ export function GroupFormPage() {
   const [discountCardPath, setDiscountCardPath] = useState<string | null>(null);
   const [addedItems, setAddedItems] = useState<AddedItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchNetwork, setSearchNetwork] = useState<string>("all");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
@@ -155,12 +154,14 @@ export function GroupFormPage() {
     setAddedItems(prev => prev.map(i => i.productId === productId ? { ...i, qty } : i));
   };
 
-  const filteredSearchProducts = products.filter(p => {
-    const matchSearch = !searchQuery || p.brand.toLowerCase().includes(searchQuery.toLowerCase()) || p.nomenclature.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchNetwork = searchNetwork === "all" || p.network === searchNetwork;
-    const notAdded = !addedItems.find(i => i.productId === p.id);
-    return matchSearch && matchNetwork && notAdded && p.isActive;
-  });
+  const filteredSearchProducts = network
+    ? products.filter(p => {
+        const matchNetwork = p.network === network;
+        const matchSearch = !searchQuery || p.brand.toLowerCase().includes(searchQuery.toLowerCase()) || p.nomenclature.toLowerCase().includes(searchQuery.toLowerCase());
+        const notAdded = !addedItems.find(i => i.productId === p.id);
+        return matchNetwork && matchSearch && notAdded && p.isActive;
+      })
+    : [];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -253,7 +254,11 @@ export function GroupFormPage() {
 
             <div className="space-y-2">
               <Label>Сеть</Label>
-              <Select value={network} onValueChange={setNetwork}>
+              <Select value={network} onValueChange={(v) => {
+                setNetwork(v);
+                setAddedItems([]);
+                setSearchQuery("");
+              }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Выберите сеть" />
                 </SelectTrigger>
@@ -323,47 +328,40 @@ export function GroupFormPage() {
             {/* Search block */}
             <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
               <Label className="text-sm font-medium">Добавить товар</Label>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Поиск по названию..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
-                <Select value={searchNetwork} onValueChange={setSearchNetwork}>
-                  <SelectTrigger className="w-full sm:w-36">
-                    <SelectValue placeholder="Сеть" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Все сети</SelectItem>
-                    {networks.map(n => (
-                      <SelectItem key={n.id} value={n.name}>{n.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {!network ? (
+                <p className="text-sm text-muted-foreground text-center py-3">Сначала выберите сеть выше, чтобы добавить товары</p>
+              ) : (
+                <>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder={`Поиск по товарам ${network}...`}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
 
-              {filteredSearchProducts.length > 0 && (
-                <div className="max-h-48 overflow-y-auto space-y-1 custom-scrollbar">
-                  {filteredSearchProducts.slice(0, 10).map(p => (
-                    <div key={p.id} className="flex items-center justify-between p-2 bg-background rounded border text-sm">
-                      <div className="min-w-0 flex-1 mr-2">
-                        <span className="font-medium text-xs">{p.brand}</span>
-                        <span className="text-xs text-muted-foreground ml-1 truncate">{p.nomenclature}</span>
-                      </div>
-                      <Button type="button" variant="ghost" size="sm" className="shrink-0 h-7 text-xs" onClick={() => addItem(p)}>
-                        <Plus className="h-3 w-3 mr-1" />
-                        Добавить
-                      </Button>
+                  {filteredSearchProducts.length > 0 && (
+                    <div className="max-h-48 overflow-y-auto space-y-1 custom-scrollbar">
+                      {filteredSearchProducts.slice(0, 10).map(p => (
+                        <div key={p.id} className="flex items-center justify-between p-2 bg-background rounded border text-sm">
+                          <div className="min-w-0 flex-1 mr-2">
+                            <span className="font-medium text-xs">{p.brand}</span>
+                            <span className="text-xs text-muted-foreground ml-1 truncate">{p.nomenclature}</span>
+                          </div>
+                          <Button type="button" variant="ghost" size="sm" className="shrink-0 h-7 text-xs" onClick={() => addItem(p)}>
+                            <Plus className="h-3 w-3 mr-1" />
+                            Добавить
+                          </Button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
-              {filteredSearchProducts.length === 0 && searchQuery && (
-                <p className="text-xs text-muted-foreground text-center py-2">Ничего не найдено</p>
+                  )}
+                  {filteredSearchProducts.length === 0 && searchQuery && (
+                    <p className="text-xs text-muted-foreground text-center py-2">Ничего не найдено</p>
+                  )}
+                </>
               )}
             </div>
 
@@ -393,8 +391,11 @@ export function GroupFormPage() {
                 ))}
               </div>
             )}
-            {addedItems.length === 0 && (
+            {addedItems.length === 0 && network && (
               <p className="text-sm text-muted-foreground text-center py-4">Добавьте товары из поиска выше</p>
+            )}
+            {addedItems.length === 0 && !network && (
+              <p className="text-sm text-muted-foreground text-center py-4">Выберите сеть для добавления товаров</p>
             )}
           </CardContent>
         </Card>
