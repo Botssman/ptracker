@@ -48,12 +48,39 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'DEPLOY'
           cd /var/www/ptracker
-          bun install --production
+
+          # Обновляем systemd сервис на next start (не standalone)
+          cat > /etc/systemd/system/ptracker.service << 'SERVICE'
+          [Unit]
+          Description=Purchase Tracker
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=root
+          WorkingDirectory=/var/www/ptracker
+          ExecStart=/root/.bun/bin/bun run node_modules/.bin/next start
+          Restart=on-failure
+          RestartSec=10
+          Environment=NODE_ENV=production
+          Environment=PORT=3000
+
+          [Install]
+          WantedBy=multi-user.target
+          SERVICE
+
+          systemctl daemon-reload
+
+          # Устанавливаем зависимости и генерируем Prisma
+          bun install
           bun prisma generate
           bun prisma db push --skip-generate
-          mkdir -p .next/standalone/node_modules
-          cp -r node_modules/.prisma .next/standalone/node_modules/
-          cp -r node_modules/@prisma .next/standalone/node_modules/
+
+          # Удаляем старый standalone билд если есть
+          rm -rf .next/standalone
+
           systemctl restart ptracker
+          sleep 3
+          systemctl status ptracker --no-pager -l
           echo "✅ Деплой завершён!"
           DEPLOY
