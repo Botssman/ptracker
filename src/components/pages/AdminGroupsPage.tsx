@@ -5,13 +5,16 @@ import { useRouterContext } from "@/lib/router-context";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState } from "@/components/shared/LoadingState";
-import { Plus, Eye, Pencil, Trash2, FolderOpen, DollarSign } from "lucide-react";
+import {
+  Plus, Eye, Pencil, Trash2, FolderOpen, DollarSign,
+  Clock, CheckCircle2, RotateCcw, AlertCircle
+} from "lucide-react";
 
 interface UserData {
   id: number;
@@ -48,9 +51,9 @@ const STATUS_LABELS: Record<string, string> = {
   COMPLETED: "Завершено",
 };
 
-function getStatusBadgeVariant(status: string): "default" | "secondary" | "outline" {
+function getStatusBadgeVariant(status: string): "default" | "secondary" | "outline" | "destructive" {
   if (status === "ACTIVE") return "default";
-  if (status === "PENDING_REVIEW") return "outline";
+  if (status === "PENDING_REVIEW") return "destructive";
   return "secondary";
 }
 
@@ -63,6 +66,7 @@ export function AdminGroupsPage() {
   const [userFilter, setUserFilter] = useState<string>("all");
   const [networkFilter, setNetworkFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [actionLoading, setActionLoading] = useState<number | null>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -95,6 +99,38 @@ export function AdminGroupsPage() {
     }
   };
 
+  const handleQuickComplete = async (id: number) => {
+    if (!confirm("Завершить эту группу?")) return;
+    setActionLoading(id);
+    try {
+      await apiFetch(`/api/groups/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ status: "COMPLETED" }),
+      });
+      setGroups(prev => prev.map(g => g.id === id ? { ...g, status: "COMPLETED" } : g));
+    } catch (err) {
+      alert("Не удалось завершить группу");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleQuickReturn = async (id: number) => {
+    if (!confirm("Вернуть группу в активные?")) return;
+    setActionLoading(id);
+    try {
+      await apiFetch(`/api/groups/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ status: "ACTIVE" }),
+      });
+      setGroups(prev => prev.map(g => g.id === id ? { ...g, status: "ACTIVE" } : g));
+    } catch (err) {
+      alert("Не удалось вернуть группу");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   if (loading) {
     return (
       <div>
@@ -119,16 +155,106 @@ export function AdminGroupsPage() {
   }
 
   const networkNames = networks.map(n => n.name);
+  const pendingGroups = groups.filter(g => g.status === "PENDING_REVIEW");
+  const pendingCount = pendingGroups.length;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Группы заданий</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">Группы заданий</h1>
+          {pendingCount > 0 && (
+            <Badge variant="destructive" className="text-xs px-2.5 py-0.5 animate-pulse">
+              {pendingCount} на проверке
+            </Badge>
+          )}
+        </div>
         <Button onClick={() => navigate("group-form")} size="sm">
           <Plus className="h-4 w-4 mr-1" />
           Создать группу
         </Button>
       </div>
+
+      {/* ============ PENDING REVIEW SECTION ============ */}
+      {pendingCount > 0 && (
+        <Card className="mb-6 border-orange-300 bg-gradient-to-br from-orange-50 to-amber-50 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2 text-orange-800">
+              <AlertCircle className="h-5 w-5 text-orange-500" />
+              Ожидают проверки
+              <Badge variant="destructive" className="ml-1 text-xs">{pendingCount}</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {pendingGroups.map(group => {
+              const progressPercent = group.totalItems > 0 ? (group.completedItems / group.totalItems) * 100 : 0;
+              return (
+                <div
+                  key={group.id}
+                  className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 bg-white rounded-lg border border-orange-100 shadow-sm"
+                >
+                  {/* Left: Group info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Badge variant="outline" className="text-xs">{group.network}</Badge>
+                      <span className="text-xs text-muted-foreground">{group.period}</span>
+                    </div>
+                    <p className="font-medium text-sm truncate">{group.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {group.userName} · {group.userEmail}
+                    </p>
+                    <div className="flex items-center gap-4 mt-2">
+                      <div className="flex items-center gap-2 min-w-[120px]">
+                        <p className="text-xs text-muted-foreground whitespace-nowrap">
+                          {group.completedItems}/{group.totalItems} товаров
+                        </p>
+                        <Progress value={progressPercent} className="h-2 flex-1" />
+                      </div>
+                      {group.totalSum !== null && (
+                        <span className="text-xs font-medium">
+                          {Number(group.totalSum).toLocaleString("ru-RU")} ₽
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right: Action buttons */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs h-8"
+                      onClick={() => navigate("group-detail", { id: group.id })}
+                    >
+                      <Eye className="h-3.5 w-3.5 mr-1" />
+                      Подробнее
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="text-xs h-8 bg-green-600 hover:bg-green-700"
+                      disabled={actionLoading === group.id}
+                      onClick={() => handleQuickComplete(group.id)}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                      Завершить
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs h-8"
+                      disabled={actionLoading === group.id}
+                      onClick={() => handleQuickReturn(group.id)}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                      Вернуть
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Filters */}
       <Card className="mb-4">
