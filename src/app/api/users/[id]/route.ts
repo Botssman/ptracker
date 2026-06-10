@@ -45,3 +45,51 @@ export async function PUT(
     return NextResponse.json({ error: "Ошибка сервера" }, { status: 500 });
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
+    }
+    const role = (session.user as { role?: string })?.role;
+    if (role !== "ADMIN") {
+      return NextResponse.json({ error: "Доступ запрещён. Только администратор может удалять пользователей" }, { status: 403 });
+    }
+
+    const { id } = await params;
+    const userId = Number(id);
+    const currentUserId = Number((session.user as { id?: string })?.id);
+
+    // Нельзя удалить самого себя
+    if (userId === currentUserId) {
+      return NextResponse.json({ error: "Нельзя удалить самого себя" }, { status: 400 });
+    }
+
+    // Проверяем что пользователь существует
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      include: { _count: { select: { groups: true } } },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "Пользователь не найден" }, { status: 404 });
+    }
+
+    // Удаляем пользователя (каскадно удалятся группы, товары групп и чеки)
+    await db.user.delete({
+      where: { id: userId },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: `Пользователь «${user.name}» удалён (вместе с ${user._count.groups} группами)`,
+    });
+  } catch (error) {
+    console.error("Delete user error:", error);
+    return NextResponse.json({ error: "Ошибка сервера" }, { status: 500 });
+  }
+}

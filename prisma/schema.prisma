@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -41,14 +41,14 @@ model Product {
 model PurchaseGroup {
   id               Int       @id @default(autoincrement())
   userId           Int
-  user             User      @relation(fields: [userId], references: [id])
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   network          String
   name             String
   phone            String?
   period           String
   status           GroupStatus @default(ACTIVE)
   discountCardPath String?
-  totalSum         Decimal?  @db.Decimal(12,2)
+  totalSum         Decimal?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   items            PurchaseGroupItem[]
@@ -71,7 +71,7 @@ model PurchaseGroupItem {
   purchasedQty Int       @default(0)
   userMarkedQty Int      @default(0)
   modConfirmed Boolean   @default(false)
-  price        Decimal?  @db.Decimal(12,2)
+  price        Decimal?
 }
 
 model Receipt {

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import type { UserRole } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState } from "@/components/shared/LoadingState";
-import { Users, Pencil, ShieldAlert } from "lucide-react";
+import { Users, Pencil, ShieldAlert, Trash2 } from "lucide-react";
 
 interface UserData {
   id: number;
@@ -38,6 +39,7 @@ const roleLabel: Record<string, string> = {
 };
 
 export function AdminUsersPage() {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
   const [editUser, setEditUser] = useState<UserData | null>(null);
@@ -47,6 +49,9 @@ export function AdminUsersPage() {
   const [editBlocked, setEditBlocked] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState<number | null>(null);
+
+  const isAdmin = currentUser?.role === "ADMIN";
 
   useEffect(() => {
     async function fetchUsers() {
@@ -61,6 +66,11 @@ export function AdminUsersPage() {
     }
     fetchUsers();
   }, []);
+
+  const refreshUsers = async () => {
+    const data = await apiFetch<UserData[]>("/api/users");
+    setUsers(data);
+  };
 
   const openEdit = (user: UserData) => {
     setEditUser(user);
@@ -84,9 +94,7 @@ export function AdminUsersPage() {
           isBlocked: editBlocked,
         }),
       });
-      // Refresh users
-      const data = await apiFetch<UserData[]>("/api/users");
-      setUsers(data);
+      await refreshUsers();
       setDialogOpen(false);
     } catch (err) {
       console.error("Failed to update user:", err);
@@ -101,10 +109,38 @@ export function AdminUsersPage() {
         method: "PUT",
         body: JSON.stringify({ isBlocked: !user.isBlocked }),
       });
-      const data = await apiFetch<UserData[]>("/api/users");
-      setUsers(data);
+      await refreshUsers();
     } catch (err) {
       console.error("Failed to update user:", err);
+    }
+  };
+
+  const handleDelete = async (user: UserData) => {
+    if (user.id === Number(currentUser?.id)) {
+      alert("Нельзя удалить самого себя");
+      return;
+    }
+
+    const groupsWarning = user.groupsCount > 0
+      ? `\n\nВНИМАНИЕ: У пользователя ${user.groupsCount} групп(ы) — все будут удалены вместе с товарами и чеками!`
+      : "";
+
+    if (!confirm(`Удалить пользователя «${user.name}» (${user.email})?${groupsWarning}\n\nЭто действие необратимо.`)) return;
+
+    setDeleting(user.id);
+    try {
+      const result = await apiFetch<{ success: boolean; message: string }>(`/api/users/${user.id}`, {
+        method: "DELETE",
+      });
+      await refreshUsers();
+      if (result.message) {
+        alert(result.message);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Не удалось удалить пользователя";
+      alert(msg);
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -140,67 +176,109 @@ export function AdminUsersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map(user => (
-                  <TableRow key={user.id}>
-                    <TableCell className="font-medium">{user.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{user.email}</TableCell>
-                    <TableCell>
-                      <Badge variant={roleBadgeVariant[user.role] || "outline"}>{roleLabel[user.role] || user.role}</Badge>
-                    </TableCell>
-                    <TableCell className="text-sm">{new Date(user.createdAt).toLocaleDateString("ru-RU")}</TableCell>
-                    <TableCell className="text-center">{user.groupsCount}</TableCell>
-                    <TableCell className="text-center">
-                      {user.isBlocked ? (
-                        <Badge variant="destructive" className="text-xs">Заблокирован</Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-xs text-green-600">Активен</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(user)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className={user.isBlocked ? "text-green-600" : "text-destructive"} onClick={() => handleBlock(user)}>
-                          <ShieldAlert className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {users.map(user => {
+                  const isSelf = user.id === Number(currentUser?.id);
+                  return (
+                    <TableRow key={user.id} className={user.isBlocked ? "opacity-60" : ""}>
+                      <TableCell className="font-medium">
+                        {user.name}
+                        {isSelf && <span className="text-xs text-muted-foreground ml-1">(вы)</span>}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                      <TableCell>
+                        <Badge variant={roleBadgeVariant[user.role] || "outline"}>{roleLabel[user.role] || user.role}</Badge>
+                      </TableCell>
+                      <TableCell className="text-sm">{new Date(user.createdAt).toLocaleDateString("ru-RU")}</TableCell>
+                      <TableCell className="text-center">{user.groupsCount}</TableCell>
+                      <TableCell className="text-center">
+                        {user.isBlocked ? (
+                          <Badge variant="destructive" className="text-xs">Заблокирован</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs text-green-600">Активен</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => openEdit(user)} title="Редактировать">
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={user.isBlocked ? "text-green-600" : "text-destructive"}
+                            onClick={() => handleBlock(user)}
+                            title={user.isBlocked ? "Разблокировать" : "Заблокировать"}
+                          >
+                            <ShieldAlert className="h-4 w-4" />
+                          </Button>
+                          {isAdmin && !isSelf && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => handleDelete(user)}
+                              disabled={deleting === user.id}
+                              title="Удалить навсегда"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
 
           {/* Mobile cards */}
           <div className="md:hidden space-y-3">
-            {users.map(user => (
-              <Card key={user.id}>
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="font-medium text-sm">{user.name}</p>
-                      <p className="text-xs text-muted-foreground">{user.email}</p>
+            {users.map(user => {
+              const isSelf = user.id === Number(currentUser?.id);
+              return (
+                <Card key={user.id} className={user.isBlocked ? "opacity-60" : ""}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="font-medium text-sm">
+                          {user.name}
+                          {isSelf && <span className="text-xs text-muted-foreground ml-1">(вы)</span>}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{user.email}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Badge variant={roleBadgeVariant[user.role] || "outline"} className="text-xs">{roleLabel[user.role] || user.role}</Badge>
+                        {user.isBlocked && <Badge variant="destructive" className="text-xs">Блок</Badge>}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <Badge variant={roleBadgeVariant[user.role] || "outline"} className="text-xs">{roleLabel[user.role] || user.role}</Badge>
-                      {user.isBlocked && <Badge variant="destructive" className="text-xs">Блок</Badge>}
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-xs text-muted-foreground">Групп: {user.groupsCount} · {new Date(user.createdAt).toLocaleDateString("ru-RU")}</span>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(user)} title="Редактировать">
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleBlock(user)} title={user.isBlocked ? "Разблокировать" : "Заблокировать"}>
+                          <ShieldAlert className="h-3 w-3" />
+                        </Button>
+                        {isAdmin && !isSelf && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => handleDelete(user)}
+                            disabled={deleting === user.id}
+                            title="Удалить навсегда"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-muted-foreground">Групп: {user.groupsCount} · {new Date(user.createdAt).toLocaleDateString("ru-RU")}</span>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(user)}>
-                        <Pencil className="h-3 w-3" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleBlock(user)}>
-                        <ShieldAlert className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </>
       )}
