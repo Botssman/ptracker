@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState } from "@/components/shared/LoadingState";
-import { ClipboardList, CreditCard, Phone } from "lucide-react";
+import { ClipboardList, CreditCard, Phone, DollarSign } from "lucide-react";
 
 interface GroupData {
   id: number;
@@ -22,8 +22,21 @@ interface GroupData {
   period: string;
   status: string;
   discountCardPath: string | null;
+  totalSum: number | null;
   totalItems: number;
   completedItems: number;
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  ACTIVE: "Активно",
+  PENDING_REVIEW: "На проверке",
+  COMPLETED: "Завершено",
+};
+
+function getStatusBadgeVariant(status: string): "default" | "secondary" | "outline" {
+  if (status === "ACTIVE") return "default";
+  if (status === "PENDING_REVIEW") return "outline";
+  return "secondary";
 }
 
 export function UserGroupsPage() {
@@ -101,11 +114,18 @@ export function UserGroupsPage() {
                 )}
                 {/* Status */}
                 <div className="flex items-center gap-2">
-                  <Badge variant={group.status === "ACTIVE" ? "default" : "secondary"} className="text-xs">
-                    {group.status === "ACTIVE" ? "Активно" : "Завершено"}
+                  <Badge variant={getStatusBadgeVariant(group.status)} className="text-xs">
+                    {STATUS_LABELS[group.status] || group.status}
                   </Badge>
                   <span className="text-xs text-muted-foreground">{group.period}</span>
                 </div>
+                {/* Total sum */}
+                {group.totalSum !== null && (
+                  <div className="flex items-center gap-1">
+                    <DollarSign className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-sm font-medium">{Number(group.totalSum).toLocaleString("ru-RU")} ₽</span>
+                  </div>
+                )}
                 {/* Progress */}
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">

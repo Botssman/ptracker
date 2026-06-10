@@ -72,7 +72,7 @@ export function GroupFormPage() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [period, setPeriod] = useState("");
-  const [status, setStatus] = useState<"ACTIVE" | "COMPLETED">("ACTIVE");
+  const [status, setStatus] = useState<"ACTIVE" | "PENDING_REVIEW" | "COMPLETED">("ACTIVE");
   const [discountCardPath, setDiscountCardPath] = useState<string | null>(null);
   const [addedItems, setAddedItems] = useState<AddedItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -104,7 +104,7 @@ export function GroupFormPage() {
           setName(groupData.name);
           setPhone(groupData.phone || "");
           setPeriod(groupData.period);
-          setStatus(groupData.status as "ACTIVE" | "COMPLETED");
+          setStatus(groupData.status as "ACTIVE" | "PENDING_REVIEW" | "COMPLETED");
           setDiscountCardPath(groupData.discountCardPath);
           setAddedItems(
             groupData.items.map(i => ({
@@ -306,12 +306,13 @@ export function GroupFormPage() {
 
             <div className="space-y-2">
               <Label>Статус</Label>
-              <Select value={status} onValueChange={(v) => setStatus(v as "ACTIVE" | "COMPLETED")}>
+              <Select value={status} onValueChange={(v) => setStatus(v as "ACTIVE" | "PENDING_REVIEW" | "COMPLETED")}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ACTIVE">Активно</SelectItem>
+                  <SelectItem value="PENDING_REVIEW">На проверке</SelectItem>
                   <SelectItem value="COMPLETED">Завершено</SelectItem>
                 </SelectContent>
               </Select>

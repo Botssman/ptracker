@@ -34,6 +34,7 @@ export async function PUT(
         ...(body.purchasedQty !== undefined && { purchasedQty: body.purchasedQty }),
         ...(body.userMarkedQty !== undefined && { userMarkedQty: body.userMarkedQty }),
         ...(body.modConfirmed !== undefined && { modConfirmed: body.modConfirmed }),
+        ...(body.price !== undefined && { price: body.price === null ? null : body.price }),
       },
     });
 

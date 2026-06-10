@@ -60,6 +60,7 @@ export async function GET(request: NextRequest) {
       period: g.period,
       status: g.status,
       discountCardPath: g.discountCardPath,
+      totalSum: g.totalSum,
       createdAt: g.createdAt,
       updatedAt: g.updatedAt,
       totalItems: g._count.items,

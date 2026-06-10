@@ -52,26 +52,57 @@ export async function PUT(
       return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
     }
     const role = (session.user as { role?: string })?.role;
-    if (role !== "ADMIN" && role !== "MODERATOR") {
-      return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
-    }
+    const userId = Number((session.user as { id?: string })?.id);
+    const isAdminOrMod = role === "ADMIN" || role === "MODERATOR";
 
     const { id } = await params;
     const groupId = Number(id);
     const body = await request.json();
 
-    // Update group fields
+    // Check that the group exists
+    const existingGroup = await db.purchaseGroup.findUnique({
+      where: { id: groupId },
+    });
+    if (!existingGroup) {
+      return NextResponse.json({ error: "Группа не найдена" }, { status: 404 });
+    }
+
+    // Authorization: any authenticated user can submit for review (PENDING_REVIEW)
+    // Only admin/mod can change to ACTIVE or COMPLETED
+    // Regular users can only update their own groups
+    if (body.status !== undefined) {
+      if (body.status === "PENDING_REVIEW") {
+        // Any user can submit their own group for review
+        if (!isAdminOrMod && existingGroup.userId !== userId) {
+          return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
+        }
+      } else if (body.status === "ACTIVE" || body.status === "COMPLETED") {
+        // Only admin/mod can set ACTIVE or COMPLETED
+        if (!isAdminOrMod) {
+          return NextResponse.json({ error: "Только администратор может изменить статус на Активно или Завершено" }, { status: 403 });
+        }
+      }
+    }
+
+    // Non-admin users can only edit their own groups, and only basic fields
+    if (!isAdminOrMod && existingGroup.userId !== userId) {
+      return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
+    }
+
+    // Build update data
+    const updateData: Record<string, unknown> = {};
+    if (body.userId !== undefined) updateData.userId = Number(body.userId);
+    if (body.network !== undefined) updateData.network = body.network;
+    if (body.name !== undefined) updateData.name = body.name;
+    if (body.phone !== undefined) updateData.phone = body.phone;
+    if (body.period !== undefined) updateData.period = body.period;
+    if (body.status !== undefined) updateData.status = body.status;
+    if (body.discountCardPath !== undefined) updateData.discountCardPath = body.discountCardPath;
+    if (body.totalSum !== undefined) updateData.totalSum = body.totalSum === null ? null : body.totalSum;
+
     const group = await db.purchaseGroup.update({
       where: { id: groupId },
-      data: {
-        ...(body.userId !== undefined && { userId: Number(body.userId) }),
-        ...(body.network !== undefined && { network: body.network }),
-        ...(body.name !== undefined && { name: body.name }),
-        ...(body.phone !== undefined && { phone: body.phone }),
-        ...(body.period !== undefined && { period: body.period }),
-        ...(body.status !== undefined && { status: body.status }),
-        ...(body.discountCardPath !== undefined && { discountCardPath: body.discountCardPath }),
-      },
+      data: updateData,
     });
 
     // Sync items if provided: delete old, create new
@@ -79,10 +110,13 @@ export async function PUT(
       await db.purchaseGroupItem.deleteMany({ where: { groupId } });
       if (Array.isArray(body.items) && body.items.length > 0) {
         await db.purchaseGroupItem.createMany({
-          data: body.items.map((item: { productId: number; assignedQty: number }) => ({
+          data: body.items.map((item: { productId: number; assignedQty: number; purchasedQty?: number; modConfirmed?: boolean; price?: number | null }) => ({
             groupId,
             productId: Number(item.productId),
             assignedQty: item.assignedQty || 1,
+            ...(item.purchasedQty !== undefined && { purchasedQty: item.purchasedQty }),
+            ...(item.modConfirmed !== undefined && { modConfirmed: item.modConfirmed }),
+            ...(item.price !== undefined && { price: item.price === null ? null : item.price }),
           })),
         });
       }

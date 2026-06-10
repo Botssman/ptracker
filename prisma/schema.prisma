@@ -48,6 +48,7 @@ model PurchaseGroup {
   period           String
   status           GroupStatus @default(ACTIVE)
   discountCardPath String?
+  totalSum         Decimal?  @db.Decimal(12,2)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   items            PurchaseGroupItem[]
@@ -56,6 +57,7 @@ model PurchaseGroup {
 
 enum GroupStatus {
   ACTIVE
+  PENDING_REVIEW
   COMPLETED
 }
 
@@ -69,6 +71,7 @@ model PurchaseGroupItem {
   purchasedQty Int       @default(0)
   userMarkedQty Int      @default(0)
   modConfirmed Boolean   @default(false)
+  price        Decimal?  @db.Decimal(12,2)
 }
 
 model Receipt {

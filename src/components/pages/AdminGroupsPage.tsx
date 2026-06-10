@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Progress } from "@/components/ui/progress";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState } from "@/components/shared/LoadingState";
-import { Plus, Eye, Pencil, Trash2, FolderOpen } from "lucide-react";
+import { Plus, Eye, Pencil, Trash2, FolderOpen, DollarSign } from "lucide-react";
 
 interface UserData {
   id: number;
@@ -31,6 +31,7 @@ interface GroupData {
   period: string;
   status: string;
   discountCardPath: string | null;
+  totalSum: number | null;
   totalItems: number;
   completedItems: number;
 }
@@ -39,6 +40,18 @@ interface NetworkData {
   id: number;
   name: string;
   createdAt: string;
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  ACTIVE: "Активно",
+  PENDING_REVIEW: "На проверке",
+  COMPLETED: "Завершено",
+};
+
+function getStatusBadgeVariant(status: string): "default" | "secondary" | "outline" {
+  if (status === "ACTIVE") return "default";
+  if (status === "PENDING_REVIEW") return "outline";
+  return "secondary";
 }
 
 export function AdminGroupsPage() {
@@ -150,6 +163,7 @@ export function AdminGroupsPage() {
               <SelectContent>
                 <SelectItem value="all">Все статусы</SelectItem>
                 <SelectItem value="ACTIVE">Активно</SelectItem>
+                <SelectItem value="PENDING_REVIEW">На проверке</SelectItem>
                 <SelectItem value="COMPLETED">Завершено</SelectItem>
               </SelectContent>
             </Select>
@@ -173,6 +187,7 @@ export function AdminGroupsPage() {
                   <TableHead>Период</TableHead>
                   <TableHead>Статус</TableHead>
                   <TableHead>Прогресс</TableHead>
+                  <TableHead>Сумма</TableHead>
                   <TableHead className="text-right">Действия</TableHead>
                 </TableRow>
               </TableHeader>
@@ -192,8 +207,8 @@ export function AdminGroupsPage() {
                       <TableCell className="max-w-[200px] truncate">{group.name}</TableCell>
                       <TableCell className="text-sm">{group.period}</TableCell>
                       <TableCell>
-                        <Badge variant={group.status === "ACTIVE" ? "default" : "secondary"}>
-                          {group.status === "ACTIVE" ? "Активно" : "Завершено"}
+                        <Badge variant={getStatusBadgeVariant(group.status)}>
+                          {STATUS_LABELS[group.status] || group.status}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -201,6 +216,13 @@ export function AdminGroupsPage() {
                           <p className="text-xs text-muted-foreground mb-1">{group.completedItems}/{group.totalItems} товаров</p>
                           <Progress value={progressPercent} className="h-2" />
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        {group.totalSum !== null ? (
+                          <span className="text-sm font-medium">{Number(group.totalSum).toLocaleString("ru-RU")} ₽</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
@@ -235,14 +257,20 @@ export function AdminGroupsPage() {
                         <p className="font-medium text-sm">{group.name}</p>
                         <p className="text-xs text-muted-foreground">{group.userName} · {group.period}</p>
                       </div>
-                      <Badge variant={group.status === "ACTIVE" ? "default" : "secondary"} className="text-xs">
-                        {group.status === "ACTIVE" ? "Активно" : "Завершено"}
+                      <Badge variant={getStatusBadgeVariant(group.status)} className="text-xs">
+                        {STATUS_LABELS[group.status] || group.status}
                       </Badge>
                     </div>
                     <div className="space-y-1 mb-3">
                       <p className="text-xs text-muted-foreground">{group.completedItems}/{group.totalItems} товаров</p>
                       <Progress value={progressPercent} className="h-2" />
                     </div>
+                    {group.totalSum !== null && (
+                      <div className="flex items-center gap-1 mb-3">
+                        <DollarSign className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-sm font-medium">{Number(group.totalSum).toLocaleString("ru-RU")} ₽</span>
+                      </div>
+                    )}
                     <div className="flex gap-1">
                       <Button variant="outline" size="sm" className="text-xs" onClick={() => navigate("group-detail", { id: group.id })}>
                         <Eye className="h-3 w-3 mr-1" />
