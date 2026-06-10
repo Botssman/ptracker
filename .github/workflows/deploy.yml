@@ -12,20 +12,6 @@ jobs:
       - name: Получить код
         uses: actions/checkout@v4
 
-      - name: Установить Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Установить зависимости
-        run: bun install
-
-      - name: Генерация Prisma клиента
-        run: bun prisma generate
-
-      - name: Сборка проекта
-        run: bun run build
-        env:
-          DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
-
       - name: Настройка SSH ключа
         run: |
           mkdir -p ~/.ssh
@@ -33,23 +19,41 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
 
-      - name: Копирование файлов на сервер
+      - name: Копирование исходников на сервер
         run: |
           rsync -avz --delete \
             -e "ssh -i ~/.ssh/deploy_key" \
             --exclude='node_modules' \
             --exclude='.git' \
             --exclude='.env' \
+            --exclude='.next' \
             --exclude='prisma/dev.db' \
             --exclude='public/uploads' \
             ./ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/var/www/ptracker/
 
-      - name: Установка и перезапуск на сервере
+      - name: Сборка и запуск на сервере
         run: |
           ssh -i ~/.ssh/deploy_key ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'DEPLOY'
           cd /var/www/ptracker
+          export PATH="/root/.bun/bin:$PATH"
 
-          # Обновляем systemd сервис на next start (не standalone)
+          # Устанавливаем зависимости
+          bun install
+
+          # Генерируем Prisma клиент
+          bun prisma generate
+          bun prisma db push --skip-generate
+
+          # Останавливаем сервис перед сборкой
+          systemctl stop ptracker || true
+
+          # Удаляем старый билд
+          rm -rf .next
+
+          # Собираем проект на сервере (Prisma клиент будет тот же что и при работе)
+          bun run build
+
+          # Обновляем systemd сервис
           cat > /etc/systemd/system/ptracker.service << 'SERVICE'
           [Unit]
           Description=Purchase Tracker
@@ -70,18 +74,8 @@ jobs:
           SERVICE
 
           systemctl daemon-reload
-
-          # Устанавливаем зависимости и генерируем Prisma
-          export PATH="/root/.bun/bin:$PATH"
-          bun install
-          bun prisma generate
-          bun prisma db push --skip-generate
-
-          # Удаляем старый standalone билд если есть
-          rm -rf .next/standalone
-
-          systemctl restart ptracker
-          sleep 3
+          systemctl start ptracker
+          sleep 5
           systemctl status ptracker --no-pager -l
           echo "✅ Деплой завершён!"
           DEPLOY
