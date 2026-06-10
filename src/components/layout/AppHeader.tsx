@@ -2,14 +2,17 @@
 
 import { useRouterContext, type PageName } from "@/lib/router-context";
 import { useAuth, type UserRole } from "@/lib/auth-context";
+import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { Menu, ShoppingCart, LogOut } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface NavItem {
   label: string;
   page: PageName;
+  showBadge?: boolean; // if true, show pending review count badge
 }
 
 const navItemsByRole: Record<UserRole, NavItem[]> = {
@@ -17,11 +20,11 @@ const navItemsByRole: Record<UserRole, NavItem[]> = {
     { label: "Мои группы", page: "groups" },
   ],
   MODERATOR: [
-    { label: "Группы заданий", page: "admin-groups" },
+    { label: "Группы заданий", page: "admin-groups", showBadge: true },
     { label: "Товары", page: "admin-products" },
   ],
   ADMIN: [
-    { label: "Группы заданий", page: "admin-groups" },
+    { label: "Группы заданий", page: "admin-groups", showBadge: true },
     { label: "Товары", page: "admin-products" },
     { label: "Сети магазинов", page: "admin-networks" },
     { label: "Пользователи", page: "admin-users" },
@@ -39,8 +42,28 @@ interface AppHeaderProps {
 export function AppHeader({ role, onLogout, userName }: AppHeaderProps) {
   const { currentPage, navigate } = useRouterContext();
   const [open, setOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
   const items = navItemsByRole[role] || navItemsByRole.USER;
+
+  // Fetch pending review count for admin/moderator
+  useEffect(() => {
+    if (role !== "ADMIN" && role !== "MODERATOR") return;
+
+    async function fetchPendingCount() {
+      try {
+        const data = await apiFetch<{ id: number; status: string }[]>("/api/groups?status=PENDING_REVIEW");
+        setPendingCount(data.length);
+      } catch {
+        // silently fail
+      }
+    }
+
+    fetchPendingCount();
+    // Poll every 30 seconds
+    const interval = setInterval(fetchPendingCount, 30000);
+    return () => clearInterval(interval);
+  }, [role]);
 
   const handleNav = (page: PageName) => {
     navigate(page);
@@ -63,9 +86,14 @@ export function AppHeader({ role, onLogout, userName }: AppHeaderProps) {
               variant={currentPage === item.page ? "secondary" : "ghost"}
               size="sm"
               onClick={() => handleNav(item.page)}
-              className="text-sm"
+              className="text-sm relative"
             >
               {item.label}
+              {item.showBadge && pendingCount > 0 && (
+                <Badge variant="destructive" className="ml-1.5 text-[10px] px-1.5 py-0 h-5 min-w-[20px] flex items-center justify-center">
+                  {pendingCount}
+                </Badge>
+              )}
             </Button>
           ))}
         </nav>
@@ -84,8 +112,13 @@ export function AppHeader({ role, onLogout, userName }: AppHeaderProps) {
         <div className="md:hidden ml-auto">
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon">
+              <Button variant="ghost" size="icon" className="relative">
                 <Menu className="h-5 w-5" />
+                {pendingCount > 0 && (
+                  <Badge variant="destructive" className="absolute -top-1 -right-1 text-[10px] px-1.5 py-0 h-5 min-w-[20px] flex items-center justify-center">
+                    {pendingCount}
+                  </Badge>
+                )}
               </Button>
             </SheetTrigger>
             <SheetContent side="right" className="w-64">
@@ -98,10 +131,15 @@ export function AppHeader({ role, onLogout, userName }: AppHeaderProps) {
                   <Button
                     key={item.page}
                     variant={currentPage === item.page ? "secondary" : "ghost"}
-                    className="justify-start"
+                    className="justify-start relative"
                     onClick={() => handleNav(item.page)}
                   >
                     {item.label}
+                    {item.showBadge && pendingCount > 0 && (
+                      <Badge variant="destructive" className="ml-auto text-[10px] px-1.5 py-0 h-5 min-w-[20px] flex items-center justify-center">
+                        {pendingCount}
+                      </Badge>
+                    )}
                   </Button>
                 ))}
                 <div className="border-t my-2" />
