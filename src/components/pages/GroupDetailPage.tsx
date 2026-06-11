@@ -14,10 +14,11 @@ import { Progress } from "@/components/ui/progress";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState } from "@/components/shared/LoadingState";
 import {
-  ArrowLeft, CreditCard, Phone, ExternalLink, ShoppingCart,
+  ArrowLeft, Phone, ExternalLink, ShoppingCart,
   Upload, Image as ImageIcon, PackageOpen, FileText, CheckCircle2, Clock, XCircle, Trash2,
   Send, RotateCcw, Copy, DollarSign
 } from "lucide-react";
+import { DiscountCardImage } from "@/components/shared/DiscountCardImage";
 
 interface ItemData {
   id: number;
@@ -334,13 +335,7 @@ export function GroupDetailPage() {
         <CardContent className="p-6">
           <div className="flex flex-col sm:flex-row gap-6">
             {/* Discount card image */}
-            <div className="w-full sm:w-48 h-36 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center border shrink-0">
-              {group.discountCardPath ? (
-                <img src={group.discountCardPath} alt="Discount card" className="w-full h-full object-cover rounded-lg" />
-              ) : (
-                <CreditCard className="h-12 w-12 text-primary/40" />
-              )}
-            </div>
+            <DiscountCardImage src={group.discountCardPath} size="lg" />
             <div className="flex-1 space-y-2">
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="outline">{group.network}</Badge>

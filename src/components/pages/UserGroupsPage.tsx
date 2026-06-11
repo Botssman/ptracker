@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState } from "@/components/shared/LoadingState";
-import { ClipboardList, CreditCard, Phone, DollarSign } from "lucide-react";
+import { ClipboardList, Phone, DollarSign } from "lucide-react";
+import { DiscountCardImage } from "@/components/shared/DiscountCardImage";
 
 interface GroupData {
   id: number;
@@ -94,13 +95,7 @@ export function UserGroupsPage() {
             >
               <CardContent className="p-4 space-y-3">
                 {/* Discount card thumbnail */}
-                <div className="w-full h-32 rounded-md bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center border">
-                  {group.discountCardPath ? (
-                    <img src={group.discountCardPath} alt="Discount card" className="w-full h-full object-cover rounded-md" />
-                  ) : (
-                    <CreditCard className="h-10 w-10 text-primary/40" />
-                  )}
-                </div>
+                <DiscountCardImage src={group.discountCardPath} size="md" className="w-full h-32" />
                 {/* Network badge */}
                 <Badge variant="outline" className="text-xs">{group.network}</Badge>
                 {/* Group name */}

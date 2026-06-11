@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ValidationErrors, FieldError } from "@/components/shared/ValidationErrors";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { ArrowLeft, Save, Plus, Search, Upload, X } from "lucide-react";
+import { DiscountCardImage } from "@/components/shared/DiscountCardImage";
 
 interface UserData {
   id: number;
@@ -280,8 +281,8 @@ export function GroupFormPage() {
             <div className="space-y-2">
               <Label>Загрузка скрина дисконтной карты</Label>
               {discountCardPath ? (
-                <div className="relative">
-                  <img src={discountCardPath} alt="Discount card" className="w-48 h-32 object-cover rounded border" />
+                <div className="relative inline-block">
+                  <DiscountCardImage src={discountCardPath} size="lg" />
                   <Button type="button" variant="ghost" size="sm" className="mt-1 text-xs" onClick={() => setDiscountCardPath(null)}>Удалить</Button>
                 </div>
               ) : (
