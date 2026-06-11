@@ -1,6 +1,7 @@
 import NextAuth, { type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { db } from "@/lib/db";
+import bcrypt from "bcryptjs";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -27,8 +28,21 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        // Simple password comparison (for dev - in production use bcrypt)
-        if (user.password !== credentials.password) {
+        // Проверка пароля — сначала пробуем bcrypt, если не хеш — сравниваем напрямую (для старых паролей)
+        let passwordMatch = false;
+        try {
+          // Если пароль выглядит как bcrypt-хеш ($2a$, $2b$)
+          if (user.password.startsWith("$2")) {
+            passwordMatch = await bcrypt.compare(credentials.password, user.password);
+          } else {
+            // Старый незашифрованный пароль — прямое сравнение
+            passwordMatch = user.password === credentials.password;
+          }
+        } catch {
+          passwordMatch = false;
+        }
+
+        if (!passwordMatch) {
           return null;
         }
 

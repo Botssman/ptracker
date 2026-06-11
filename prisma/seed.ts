@@ -1,4 +1,5 @@
 import { PrismaClient, Role, GroupStatus, CodeStatus } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
@@ -23,24 +24,27 @@ async function main() {
 
   console.log("Networks created: 5");
 
+  // Хешируем пароль для сид-данных
+  const hashedPassword = await bcrypt.hash("password123", 10);
+
   // Create users
   const admin = await prisma.user.create({
-    data: { name: "Иван Петров", email: "admin@example.com", password: "password123", role: Role.ADMIN },
+    data: { name: "Иван Петров", email: "admin@example.com", password: hashedPassword, role: Role.ADMIN },
   });
   const maria = await prisma.user.create({
-    data: { name: "Мария Сидорова", email: "maria@example.com", password: "password123", role: Role.MODERATOR },
+    data: { name: "Мария Сидорова", email: "maria@example.com", password: hashedPassword, role: Role.MODERATOR },
   });
   const alex = await prisma.user.create({
-    data: { name: "Алексей Козлов", email: "alex@example.com", password: "password123", role: Role.USER },
+    data: { name: "Алексей Козлов", email: "alex@example.com", password: hashedPassword, role: Role.USER },
   });
   const elena = await prisma.user.create({
-    data: { name: "Елена Новикова", email: "elena@example.com", password: "password123", role: Role.USER },
+    data: { name: "Елена Новикова", email: "elena@example.com", password: hashedPassword, role: Role.USER },
   });
   const dmitry = await prisma.user.create({
-    data: { name: "Дмитрий Волков", email: "dmitry@example.com", password: "password123", role: Role.USER },
+    data: { name: "Дмитрий Волков", email: "dmitry@example.com", password: hashedPassword, role: Role.USER },
   });
   const olga = await prisma.user.create({
-    data: { name: "Ольга Морозова", email: "olga@example.com", password: "password123", role: Role.MODERATOR },
+    data: { name: "Ольга Морозова", email: "olga@example.com", password: hashedPassword, role: Role.MODERATOR },
   });
 
   console.log("Users created:", { admin: admin.id, maria: maria.id, alex: alex.id, elena: elena.id, dmitry: dmitry.id, olga: olga.id });
