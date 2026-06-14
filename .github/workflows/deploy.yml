@@ -70,6 +70,19 @@ jobs:
           bun run build
           DEPLOY
 
+      - name: Настройка nginx
+        run: |
+          ssh server << 'DEPLOY'
+          # Исправляем порт в nginx: 10801 → 3000 (только для ptracker)
+          if grep -q '10801' /etc/nginx/sites-enabled/ptracker 2>/dev/null; then
+            sed -i 's/10801/3000/g' /etc/nginx/sites-enabled/ptracker
+            nginx -t && systemctl reload nginx
+            echo "nginx: порт исправлен на 3000"
+          else
+            echo "nginx: порт уже правильный"
+          fi
+          DEPLOY
+
       - name: Миграция паролей и запуск
         run: |
           ssh server << 'DEPLOY'
