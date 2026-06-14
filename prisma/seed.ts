@@ -15,6 +15,9 @@ async function main() {
   await prisma.network.deleteMany();
   await prisma.user.deleteMany();
 
+  // Хешируем пароли для всех тестовых пользователей
+  const hashedPassword = await bcrypt.hash("password123", 10);
+
   // Create networks
   const network1 = await prisma.network.create({ data: { name: "Магнит" } });
   const network2 = await prisma.network.create({ data: { name: "Пятёрочка" } });
@@ -24,10 +27,7 @@ async function main() {
 
   console.log("Networks created: 5");
 
-  // Хешируем пароль для сид-данных
-  const hashedPassword = await bcrypt.hash("password123", 10);
-
-  // Create users
+  // Create users (пароли захешированы через bcrypt)
   const admin = await prisma.user.create({
     data: { name: "Иван Петров", email: "admin@example.com", password: hashedPassword, role: Role.ADMIN },
   });

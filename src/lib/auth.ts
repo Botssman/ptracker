@@ -1,7 +1,7 @@
 import NextAuth, { type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
+import { db } from "@/lib/db";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -28,21 +28,30 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        // Проверка пароля — сначала пробуем bcrypt, если не хеш — сравниваем напрямую (для старых паролей)
-        let passwordMatch = false;
+        // Проверка пароля через bcrypt
+        // Поддержка обратной совместимости: если пароль не похож на хеш, пробуем прямое сравнение
+        let passwordValid = false;
         try {
-          // Если пароль выглядит как bcrypt-хеш ($2a$, $2b$)
-          if (user.password.startsWith("$2")) {
-            passwordMatch = await bcrypt.compare(credentials.password, user.password);
+          if (user.password.startsWith("$2a$") || user.password.startsWith("$2b$")) {
+            // Пароль захеширован bcrypt — проверяем через compare
+            passwordValid = await bcrypt.compare(credentials.password, user.password);
           } else {
-            // Старый незашифрованный пароль — прямое сравнение
-            passwordMatch = user.password === credentials.password;
+            // Старый формат (открытый текст) — прямое сравнение + автоматическая миграция
+            if (user.password === credentials.password) {
+              passwordValid = true;
+              // Автоматически хешируем пароль при следующем входе
+              const hashedPassword = await bcrypt.hash(credentials.password, 10);
+              await db.user.update({
+                where: { id: user.id },
+                data: { password: hashedPassword },
+              });
+            }
           }
         } catch {
-          passwordMatch = false;
+          passwordValid = false;
         }
 
-        if (!passwordMatch) {
+        if (!passwordValid) {
           return null;
         }
 

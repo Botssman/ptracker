@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import type { UserRole } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,7 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState } from "@/components/shared/LoadingState";
-import { Users, Pencil, ShieldAlert, Trash2 } from "lucide-react";
+import { Users, Pencil, ShieldAlert, KeyRound, Trash2 } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 interface UserData {
   id: number;
@@ -49,6 +49,8 @@ export function AdminUsersPage() {
   const [editBlocked, setEditBlocked] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
   const [deleting, setDeleting] = useState<number | null>(null);
 
   const isAdmin = currentUser?.role === "ADMIN";
@@ -78,6 +80,7 @@ export function AdminUsersPage() {
     setEditEmail(user.email);
     setEditRole(user.role);
     setEditBlocked(user.isBlocked);
+    setNewPassword("");
     setDialogOpen(true);
   };
 
@@ -103,6 +106,18 @@ export function AdminUsersPage() {
     }
   };
 
+  const handleDelete = async (user: UserData) => {
+    setDeleting(user.id);
+    try {
+      await apiFetch(`/api/users/${user.id}`, { method: "DELETE" });
+      await refreshUsers();
+    } catch (err) {
+      console.error("Failed to delete user:", err);
+    } finally {
+      setDeleting(null);
+    }
+  };
+
   const handleBlock = async (user: UserData) => {
     try {
       await apiFetch(`/api/users/${user.id}`, {
@@ -112,35 +127,6 @@ export function AdminUsersPage() {
       await refreshUsers();
     } catch (err) {
       console.error("Failed to update user:", err);
-    }
-  };
-
-  const handleDelete = async (user: UserData) => {
-    if (user.id === Number(currentUser?.id)) {
-      alert("Нельзя удалить самого себя");
-      return;
-    }
-
-    const groupsWarning = user.groupsCount > 0
-      ? `\n\nВНИМАНИЕ: У пользователя ${user.groupsCount} групп(ы) — все будут удалены вместе с товарами и чеками!`
-      : "";
-
-    if (!confirm(`Удалить пользователя «${user.name}» (${user.email})?${groupsWarning}\n\nЭто действие необратимо.`)) return;
-
-    setDeleting(user.id);
-    try {
-      const result = await apiFetch<{ success: boolean; message: string }>(`/api/users/${user.id}`, {
-        method: "DELETE",
-      });
-      await refreshUsers();
-      if (result.message) {
-        alert(result.message);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Не удалось удалить пользователя";
-      alert(msg);
-    } finally {
-      setDeleting(null);
     }
   };
 
@@ -212,16 +198,28 @@ export function AdminUsersPage() {
                             <ShieldAlert className="h-4 w-4" />
                           </Button>
                           {isAdmin && !isSelf && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => handleDelete(user)}
-                              disabled={deleting === user.id}
-                              title="Удалить навсегда"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="icon" className="text-destructive" disabled={deleting === user.id} title="Удалить навсегда">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Удалить пользователя?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Пользователь <strong>{user.name}</strong> ({user.email}) будет удалён навсегда.
+                                    Все его группы закупок, элементы и чеки также будут удалены. Это действие нельзя отменить.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Отмена</AlertDialogCancel>
+                                  <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => handleDelete(user)}>
+                                    Удалить
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                           )}
                         </div>
                       </TableCell>
@@ -262,16 +260,27 @@ export function AdminUsersPage() {
                           <ShieldAlert className="h-3 w-3" />
                         </Button>
                         {isAdmin && !isSelf && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => handleDelete(user)}
-                            disabled={deleting === user.id}
-                            title="Удалить навсегда"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" disabled={deleting === user.id} title="Удалить навсегда">
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Удалить пользователя?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Пользователь <strong>{user.name}</strong> будет удалён навсегда вместе со всеми его группами и чеками.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Отмена</AlertDialogCancel>
+                                <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => handleDelete(user)}>
+                                  Удалить
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         )}
                       </div>
                     </div>
@@ -322,7 +331,41 @@ export function AdminUsersPage() {
                 />
                 <Label htmlFor="edit-blocked" className="cursor-pointer">Заблокирован</Label>
               </div>
-              <div className="flex gap-2">
+              <div className="space-y-2 border-t pt-4 mt-2">
+                <Label className="text-muted-foreground text-xs">Смена пароля</Label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Новый пароль (мин. 6 символов)"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={changingPassword || newPassword.length < 6}
+                    onClick={async () => {
+                      if (!editUser || newPassword.length < 6) return;
+                      setChangingPassword(true);
+                      try {
+                        await apiFetch(`/api/users/${editUser.id}`, {
+                          method: "PUT",
+                          body: JSON.stringify({ newPassword }),
+                        });
+                        setNewPassword("");
+                      } catch (err) {
+                        console.error("Failed to change password:", err);
+                      } finally {
+                        setChangingPassword(false);
+                      }
+                    }}
+                  >
+                    <KeyRound className="h-4 w-4 mr-1" />
+                    {changingPassword ? "..." : "Сменить"}
+                  </Button>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-2">
                 <Button onClick={handleSave} disabled={saving}>
                   {saving ? "Сохранение..." : "Сохранить"}
                 </Button>

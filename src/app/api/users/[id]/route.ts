@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -21,6 +22,29 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
+
+    // Если передан newPassword — хешируем и обновляем пароль
+    if (body.newPassword) {
+      if (body.newPassword.length < 6) {
+        return NextResponse.json(
+          { error: "Пароль должен быть не менее 6 символов" },
+          { status: 400 }
+        );
+      }
+      const hashedPassword = await bcrypt.hash(body.newPassword, 10);
+      const user = await db.user.update({
+        where: { id: Number(id) },
+        data: { password: hashedPassword },
+      });
+      return NextResponse.json({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isBlocked: user.isBlocked,
+        createdAt: user.createdAt,
+      });
+    }
 
     const user = await db.user.update({
       where: { id: Number(id) },

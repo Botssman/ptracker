@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
+import { db } from "@/lib/db";
 
 export async function POST(request: NextRequest) {
   try {
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Хешируем пароль
+    // Хешируем пароль через bcrypt
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Create user

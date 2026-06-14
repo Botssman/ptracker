@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
-  serverExternalPackages: ["@prisma/client", ".prisma/client"],
+  serverExternalPackages: ["@prisma/client", ".prisma/client", "bcryptjs"],
   async rewrites() {
     return [
       {
