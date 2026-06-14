@@ -7,6 +7,7 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Получить код
@@ -18,40 +19,62 @@ jobs:
           echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+          # SSH конфиг с keepalive чтобы не рвалось соединение
+          cat > ~/.ssh/config << EOF
+          Host server
+            HostName ${{ secrets.SERVER_IP }}
+            User ${{ secrets.SERVER_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            StrictHostKeyChecking no
+            ServerAliveInterval 30
+            ServerAliveCountMax 60
+            TCPKeepAlive yes
+          EOF
 
       - name: Копирование исходников на сервер
         run: |
           rsync -avz --delete \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            -e "ssh" \
             --exclude='node_modules' \
             --exclude='.git' \
             --exclude='.env' \
             --exclude='.next' \
             --exclude='prisma/dev.db' \
             --exclude='public/uploads' \
-            ./ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/var/www/ptracker/
+            ./ server:/var/www/ptracker/
 
-      - name: Сборка и запуск на сервере
+      - name: Установка зависимостей
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'DEPLOY'
+          ssh server << 'DEPLOY'
           cd /var/www/ptracker
           export PATH="/root/.bun/bin:$PATH"
-
-          # Устанавливаем зависимости
           bun install
+          DEPLOY
 
-          # Генерируем Prisma клиент
+      - name: Prisma миграция
+        run: |
+          ssh server << 'DEPLOY'
+          cd /var/www/ptracker
+          export PATH="/root/.bun/bin:$PATH"
           bun prisma generate
           bun prisma db push --skip-generate
+          DEPLOY
 
-          # Останавливаем сервис перед сборкой
+      - name: Сборка проекта
+        run: |
+          ssh server << 'DEPLOY'
+          cd /var/www/ptracker
+          export PATH="/root/.bun/bin:$PATH"
           systemctl stop ptracker || true
-
-          # Удаляем старый билд
           rm -rf .next
-
-          # Собираем проект
           bun run build
+          DEPLOY
+
+      - name: Миграция паролей и запуск
+        run: |
+          ssh server << 'DEPLOY'
+          cd /var/www/ptracker
+          export PATH="/root/.bun/bin:$PATH"
 
           # Хешируем пароли если они ещё в открытом виде
           bun scripts/hash-passwords.ts || true
